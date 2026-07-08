@@ -1,9 +1,10 @@
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 
 namespace CrediPrest.Api;
 
-public sealed class ApiExceptionMiddleware(RequestDelegate next)
+public sealed class ApiExceptionMiddleware(RequestDelegate next, ILogger<ApiExceptionMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -13,7 +14,13 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next)
         }
         catch (Exception exception)
         {
-            var statusCode = exception switch
+            var actualException = exception is TargetInvocationException { InnerException: not null }
+                ? exception.InnerException
+                : exception;
+
+            logger.LogError(actualException, "Unhandled API exception while processing {Method} {Path}.", context.Request.Method, context.Request.Path);
+
+            var statusCode = actualException switch
             {
                 UnauthorizedAccessException => HttpStatusCode.Unauthorized,
                 KeyNotFoundException => HttpStatusCode.NotFound,
@@ -26,7 +33,7 @@ public sealed class ApiExceptionMiddleware(RequestDelegate next)
 
             var response = new
             {
-                error = exception.Message,
+                error = actualException.Message,
                 statusCode = context.Response.StatusCode
             };
 
