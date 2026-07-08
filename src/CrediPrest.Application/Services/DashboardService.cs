@@ -48,8 +48,8 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             TotalLoanedUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => loan.PrincipalAmount),
             TotalRecoveredCordobas: totalRecoveredCordobas,
             TotalRecoveredUsd: totalRecoveredUsd,
-            PendingCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => Math.Max(0, loan.TotalToPay - loan.Payments.Sum(payment => payment.AmountPaid))),
-            PendingUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => Math.Max(0, loan.TotalToPay - loan.Payments.Sum(payment => payment.AmountPaid))),
+            PendingCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))),
+            PendingUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))),
             EstimatedInterestCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.TotalInterest),
             EstimatedInterestUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => loan.TotalInterest),
             RealInterestCollectedCordobas: interestCollectedCordobas,
@@ -64,4 +64,7 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             PaidThisWeekCount: payments.Count(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today),
             PaidThisMonthCount: payments.Count(payment => payment.PaymentDate.Date >= monthStart && payment.PaymentDate.Date < monthEnd));
     }
+
+    private static decimal GetAppliedInstallmentAmount(Domain.Entities.Loan loan)
+        => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
 }

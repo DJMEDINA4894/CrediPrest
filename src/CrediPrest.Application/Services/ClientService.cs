@@ -26,6 +26,8 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
         var query = dbContext.Clients
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Payments)
+            .Include(client => client.Loans)
+            .ThenInclude(loan => loan.Installments)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -163,6 +165,8 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
         => await dbContext.Clients
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Payments)
+            .Include(client => client.Loans)
+            .ThenInclude(loan => loan.Installments)
             .FirstOrDefaultAsync(client => client.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Cliente no encontrado.");
 

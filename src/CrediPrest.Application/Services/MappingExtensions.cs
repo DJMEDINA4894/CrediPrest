@@ -13,10 +13,10 @@ internal static class MappingExtensions
         var activeLoans = client.Loans.Count(loan => loan.Status == LoanStatus.Active || loan.Status == LoanStatus.Overdue);
         var pendingCordobas = client.Loans
             .Where(loan => loan.Currency == CurrencyType.Cordoba)
-            .Sum(loan => loan.TotalToPay - loan.Payments.Sum(payment => payment.AmountPaid));
+            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan));
         var pendingUsd = client.Loans
             .Where(loan => loan.Currency == CurrencyType.Usd)
-            .Sum(loan => loan.TotalToPay - loan.Payments.Sum(payment => payment.AmountPaid));
+            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan));
 
         return new ClientDto(
             client.Id,
@@ -58,7 +58,7 @@ internal static class MappingExtensions
 
     public static LoanDto ToDto(this Loan loan)
     {
-        var totalPaid = loan.Payments.Sum(payment => payment.AmountPaid);
+        var totalPaid = GetAppliedInstallmentAmount(loan);
 
         return new LoanDto(
             loan.Id,
@@ -78,6 +78,9 @@ internal static class MappingExtensions
             Math.Max(0, loan.TotalToPay - totalPaid),
             loan.Notes);
     }
+
+    private static decimal GetAppliedInstallmentAmount(Loan loan)
+        => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
 
     public static LoanDetailDto ToDetailDto(this Loan loan)
         => new(

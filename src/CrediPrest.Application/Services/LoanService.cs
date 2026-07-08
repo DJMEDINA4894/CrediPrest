@@ -16,6 +16,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
         var query = dbContext.Loans
             .Include(loan => loan.Client)
             .Include(loan => loan.Payments)
+            .Include(loan => loan.Installments)
             .Where(loan => loan.Client.IsActive)
             .AsQueryable();
 
