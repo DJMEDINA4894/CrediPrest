@@ -709,6 +709,8 @@ function DashboardView({ dashboard, activeLoans, overdueLoans }: { dashboard: Da
             <span>Vencidos <strong>{overdueLoans.length}</strong></span>
             <span>Interés estimado C$ <strong>{money(dashboard.estimatedInterestCordobas)}</strong></span>
             <span>Interés real C$ <strong>{money(dashboard.realInterestCollectedCordobas)}</strong></span>
+            <span>Interés estimado USD <strong>{money(dashboard.estimatedInterestUsd, "USD")}</strong></span>
+            <span>Interés real USD <strong>{money(dashboard.realInterestCollectedUsd, "USD")}</strong></span>
           </div>
         </Panel>
       </div>

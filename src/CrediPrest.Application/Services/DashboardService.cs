@@ -30,18 +30,18 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             .Where(payment => payment.Loan.Client.IsActive)
             .ToListAsync(cancellationToken);
 
-        var totalRecoveredCordobas = payments
-            .Where(payment => payment.Loan.Currency == CurrencyType.Cordoba)
-            .Sum(payment => payment.AmountPaid);
-        var totalRecoveredUsd = payments
-            .Where(payment => payment.Loan.Currency == CurrencyType.Usd)
-            .Sum(payment => payment.AmountPaid);
-        var interestCollectedCordobas = payments
-            .Where(payment => payment.Loan.Currency == CurrencyType.Cordoba)
-            .Sum(payment => Math.Min(payment.AmountPaid, payment.Installment.InterestAmount));
-        var interestCollectedUsd = payments
-            .Where(payment => payment.Loan.Currency == CurrencyType.Usd)
-            .Sum(payment => Math.Min(payment.AmountPaid, payment.Installment.InterestAmount));
+        var totalRecoveredCordobas = loans
+            .Where(loan => loan.Currency == CurrencyType.Cordoba)
+            .Sum(GetAppliedInstallmentAmount);
+        var totalRecoveredUsd = loans
+            .Where(loan => loan.Currency == CurrencyType.Usd)
+            .Sum(GetAppliedInstallmentAmount);
+        var interestCollectedCordobas = loans
+            .Where(loan => loan.Currency == CurrencyType.Cordoba)
+            .Sum(GetCollectedInterestAmount);
+        var interestCollectedUsd = loans
+            .Where(loan => loan.Currency == CurrencyType.Usd)
+            .Sum(GetCollectedInterestAmount);
 
         return new DashboardDto(
             TotalLoanedCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.PrincipalAmount),
@@ -67,4 +67,7 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
 
     private static decimal GetAppliedInstallmentAmount(Domain.Entities.Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
+
+    private static decimal GetCollectedInterestAmount(Domain.Entities.Loan loan)
+        => loan.Installments.Sum(installment => Math.Min(installment.AmountPaid, installment.InterestAmount));
 }
