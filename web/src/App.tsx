@@ -913,9 +913,11 @@ function LoansView(props: {
             </thead>
             <tbody>
                 {props.loans.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="muted">Todavía no hay préstamos registrados.</td>
-                  </tr>
+                   <tr>
+                      <td colSpan={6} className="empty-table-cell">
+                        Todavía no hay préstamos registrados.
+                      </td>
+                    </tr>
                 )}
                 {props.loans.map((loan) => (
                   <tr key={loan.id} className={props.loanDetail?.loan.id === loan.id ? "selected-row" : undefined}>
