@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CrediPrest.Api/CrediPrest.Api.csproj" />
+    <Project Path="src/CrediPrest.Application/CrediPrest.Application.csproj" />
+    <Project Path="src/CrediPrest.Domain/CrediPrest.Domain.csproj" />
+    <Project Path="src/CrediPrest.Infrastructure/CrediPrest.Infrastructure.csproj" />
+  </Folder>
+</Solution>
