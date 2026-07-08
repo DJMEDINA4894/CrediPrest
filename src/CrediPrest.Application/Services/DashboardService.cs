@@ -30,18 +30,12 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             .Where(payment => payment.Loan.Client.IsActive)
             .ToListAsync(cancellationToken);
 
-        var totalRecoveredCordobas = loans
-            .Where(loan => loan.Currency == CurrencyType.Cordoba)
-            .Sum(GetAppliedInstallmentAmount);
-        var totalRecoveredUsd = loans
-            .Where(loan => loan.Currency == CurrencyType.Usd)
-            .Sum(GetAppliedInstallmentAmount);
-        var interestCollectedCordobas = loans
-            .Where(loan => loan.Currency == CurrencyType.Cordoba)
-            .Sum(GetCollectedInterestAmount);
-        var interestCollectedUsd = loans
-            .Where(loan => loan.Currency == CurrencyType.Usd)
-            .Sum(GetCollectedInterestAmount);
+        var todayPayments = payments.Where(payment => payment.PaymentDate.Date == today).ToList();
+        var weekPayments = payments.Where(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today).ToList();
+        var monthPayments = payments.Where(payment => payment.PaymentDate.Date >= monthStart && payment.PaymentDate.Date < monthEnd).ToList();
+
+        var totalRecoveredCordobas = SumPaymentsByCurrency(payments, CurrencyType.Cordoba);
+        var totalRecoveredUsd = SumPaymentsByCurrency(payments, CurrencyType.Usd);
 
         return new DashboardDto(
             TotalLoanedCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.PrincipalAmount),
@@ -52,22 +46,26 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             PendingUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))),
             EstimatedInterestCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.TotalInterest),
             EstimatedInterestUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => loan.TotalInterest),
-            RealInterestCollectedCordobas: interestCollectedCordobas,
-            RealInterestCollectedUsd: interestCollectedUsd,
             ActiveClients: clients.Count(client => client.IsActive),
             ActiveLoans: loans.Count(loan => loan.Status == LoanStatus.Active),
             OverdueLoans: loans.Count(loan => loan.Status == LoanStatus.Overdue),
             OverdueInstallments: loans.SelectMany(loan => loan.Installments).Count(installment => installment.Status == InstallmentStatus.Overdue),
             DueTodayInstallments: loans.SelectMany(loan => loan.Installments).Count(installment => installment.DueDate.Date == today && installment.Status != InstallmentStatus.Paid),
             DueThisWeekInstallments: loans.SelectMany(loan => loan.Installments).Count(installment => installment.DueDate.Date >= today && installment.DueDate.Date <= weekEnd && installment.Status != InstallmentStatus.Paid),
-            PaidTodayCount: payments.Count(payment => payment.PaymentDate.Date == today),
-            PaidThisWeekCount: payments.Count(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today),
-            PaidThisMonthCount: payments.Count(payment => payment.PaymentDate.Date >= monthStart && payment.PaymentDate.Date < monthEnd));
+            PaidTodayCordobas: SumPaymentsByCurrency(todayPayments, CurrencyType.Cordoba),
+            PaidTodayUsd: SumPaymentsByCurrency(todayPayments, CurrencyType.Usd),
+            PaidThisWeekCordobas: SumPaymentsByCurrency(weekPayments, CurrencyType.Cordoba),
+            PaidThisWeekUsd: SumPaymentsByCurrency(weekPayments, CurrencyType.Usd),
+            PaidThisMonthCordobas: SumPaymentsByCurrency(monthPayments, CurrencyType.Cordoba),
+            PaidThisMonthUsd: SumPaymentsByCurrency(monthPayments, CurrencyType.Usd),
+            PaidTodayCount: todayPayments.Count,
+            PaidThisWeekCount: weekPayments.Count,
+            PaidThisMonthCount: monthPayments.Count);
     }
 
     private static decimal GetAppliedInstallmentAmount(Domain.Entities.Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
 
-    private static decimal GetCollectedInterestAmount(Domain.Entities.Loan loan)
-        => loan.Installments.Sum(installment => Math.Min(installment.AmountPaid, installment.InterestAmount));
+    private static decimal SumPaymentsByCurrency(IEnumerable<Domain.Entities.Payment> payments, CurrencyType currency)
+        => payments.Where(payment => payment.Loan.Currency == currency).Sum(payment => payment.AmountPaid);
 }

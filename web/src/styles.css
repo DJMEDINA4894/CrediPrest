@@ -527,6 +527,52 @@ td small {
   flex-wrap: wrap;
 }
 
+.action-stats {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-action {
+  align-items: flex-start;
+  background: #eef5f4;
+  border: 1px solid transparent;
+  color: #294957;
+  display: grid;
+  gap: 0.35rem;
+  min-height: 92px;
+  padding: 0.75rem 0.85rem;
+  text-align: left;
+}
+
+.stat-action:hover {
+  background: #e2f0ee;
+  border-color: #b8d8d3;
+}
+
+.stat-action.warn {
+  background: #fff6e5;
+  color: #77510a;
+}
+
+.stat-action span {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.stat-action strong {
+  color: #102f37;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.stat-action small {
+  color: #5d7482;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
 .inline-stats span,
 .loan-summary span {
   background: #eef5f4;
@@ -646,6 +692,7 @@ td small {
   .wide-left,
   .loan-form-row,
   .metric-grid,
+  .action-stats,
   .settings-grid,
   .login-panel {
     grid-template-columns: 1fr;

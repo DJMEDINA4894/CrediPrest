@@ -58,14 +58,18 @@ const emptyDashboard: Dashboard = {
   pendingUsd: 0,
   estimatedInterestCordobas: 0,
   estimatedInterestUsd: 0,
-  realInterestCollectedCordobas: 0,
-  realInterestCollectedUsd: 0,
   activeClients: 0,
   activeLoans: 0,
   overdueLoans: 0,
   overdueInstallments: 0,
   dueTodayInstallments: 0,
   dueThisWeekInstallments: 0,
+  paidTodayCordobas: 0,
+  paidTodayUsd: 0,
+  paidThisWeekCordobas: 0,
+  paidThisWeekUsd: 0,
+  paidThisMonthCordobas: 0,
+  paidThisMonthUsd: 0,
   paidTodayCount: 0,
   paidThisWeekCount: 0,
   paidThisMonthCount: 0
@@ -97,6 +101,14 @@ function portfolioMoney(cordobas: number, usd: number) {
   }
 
   return money(cordobas);
+}
+
+function dualMoney(cordobas = 0, usd = 0) {
+  if (cordobas <= 0 && usd <= 0) {
+    return `${money(0)} / ${money(0, "USD")}`;
+  }
+
+  return portfolioMoney(cordobas, usd);
 }
 
 function installmentPendingAmount(installment: Installment) {
@@ -600,7 +612,7 @@ export default function App() {
 
         {error && <div className="alert">{error}</div>}
 
-        {view === "dashboard" && <DashboardView dashboard={dashboard} activeLoans={activeLoans} overdueLoans={overdueLoans} />}
+        {view === "dashboard" && <DashboardView dashboard={dashboard} activeLoans={activeLoans} overdueLoans={overdueLoans} navigate={setView} />}
         {view === "clients" && (
           <ClientsView
             clients={clients}
@@ -681,7 +693,17 @@ function ConfirmDialog({ dialog, onCancel }: { dialog: ConfirmDialogState; onCan
   );
 }
 
-function DashboardView({ dashboard, activeLoans, overdueLoans }: { dashboard: Dashboard; activeLoans: Loan[]; overdueLoans: Loan[] }) {
+function DashboardView({
+  dashboard,
+  activeLoans,
+  overdueLoans,
+  navigate
+}: {
+  dashboard: Dashboard;
+  activeLoans: Loan[];
+  overdueLoans: Loan[];
+  navigate: (view: View) => void;
+}) {
   return (
     <section className="stack">
       <div className="metric-grid">
@@ -696,24 +718,48 @@ function DashboardView({ dashboard, activeLoans, overdueLoans }: { dashboard: Da
       </div>
       <div className="two-col">
         <Panel title="Actividad">
-          <div className="inline-stats">
-            <span>Pagos hoy <strong>{dashboard.paidTodayCount}</strong></span>
-            <span>Semana <strong>{dashboard.paidThisWeekCount}</strong></span>
-            <span>Mes <strong>{dashboard.paidThisMonthCount}</strong></span>
-            <span>Vencen hoy <strong>{dashboard.dueTodayInstallments}</strong></span>
+          <div className="action-stats">
+            <button type="button" className="stat-action" onClick={() => navigate("payments")}>
+              <span>Pagos hoy</span>
+              <strong>{dashboard.paidTodayCount}</strong>
+              <small>{dualMoney(dashboard.paidTodayCordobas, dashboard.paidTodayUsd)}</small>
+            </button>
+            <button type="button" className="stat-action" onClick={() => navigate("payments")}>
+              <span>Últimos 7 días</span>
+              <strong>{dashboard.paidThisWeekCount}</strong>
+              <small>{dualMoney(dashboard.paidThisWeekCordobas, dashboard.paidThisWeekUsd)}</small>
+            </button>
+            <button type="button" className="stat-action" onClick={() => navigate("reports")}>
+              <span>Este mes</span>
+              <strong>{dashboard.paidThisMonthCount}</strong>
+              <small>{dualMoney(dashboard.paidThisMonthCordobas, dashboard.paidThisMonthUsd)}</small>
+            </button>
+            <button type="button" className="stat-action warn" onClick={() => navigate("payments")}>
+              <span>Vencen hoy</span>
+              <strong>{dashboard.dueTodayInstallments}</strong>
+              <small>Ir a pagos</small>
+            </button>
           </div>
         </Panel>
         <Panel title="Estado cartera">
           <div className="inline-stats">
             <span>Activos <strong>{activeLoans.length}</strong></span>
             <span>Vencidos <strong>{overdueLoans.length}</strong></span>
+            <span>Cuotas vencidas <strong>{dashboard.overdueInstallments}</strong></span>
+            <span>Vencen esta semana <strong>{dashboard.dueThisWeekInstallments}</strong></span>
             <span>Interés estimado C$ <strong>{money(dashboard.estimatedInterestCordobas)}</strong></span>
-            <span>Interés real C$ <strong>{money(dashboard.realInterestCollectedCordobas)}</strong></span>
             <span>Interés estimado USD <strong>{money(dashboard.estimatedInterestUsd, "USD")}</strong></span>
-            <span>Interés real USD <strong>{money(dashboard.realInterestCollectedUsd, "USD")}</strong></span>
           </div>
         </Panel>
       </div>
+      <Panel title="Guía rápida">
+        <div className="inline-stats">
+          <span>Por cobrar <strong>{dualMoney(dashboard.pendingCordobas, dashboard.pendingUsd)}</strong></span>
+          <span>Recuperado <strong>{dualMoney(dashboard.totalRecoveredCordobas, dashboard.totalRecoveredUsd)}</strong></span>
+          <span>Clientes activos <strong>{dashboard.activeClients}</strong></span>
+          <span>Préstamos activos <strong>{dashboard.activeLoans}</strong></span>
+        </div>
+      </Panel>
     </section>
   );
 }
