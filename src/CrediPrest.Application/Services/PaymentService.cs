@@ -28,18 +28,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El préstamo ya está cancelado.");
         }
 
-        var orderedInstallments = loan.Installments
-            .Where(installment => installment.Status != InstallmentStatus.Paid)
-            .OrderBy(installment => installment.InstallmentNumber)
-            .ToList();
-
-        if (request.InstallmentId.HasValue)
-        {
-            orderedInstallments = orderedInstallments
-                .OrderBy(installment => installment.Id == request.InstallmentId.Value ? 0 : 1)
-                .ThenBy(installment => installment.InstallmentNumber)
-                .ToList();
-        }
+        var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
 
         var remainingPayment = request.AmountPaid;
         foreach (var installment in orderedInstallments)
@@ -119,5 +108,28 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         return installment.DueDate.Date < DateTime.UtcNow.Date
             ? InstallmentStatus.Overdue
             : InstallmentStatus.Pending;
+    }
+
+    private static List<Installment> GetInstallmentsInPaymentOrder(IEnumerable<Installment> installments, Guid? selectedInstallmentId)
+    {
+        var installmentList = installments.ToList();
+        var unpaidInstallments = installmentList
+            .Where(installment => installment.Status != InstallmentStatus.Paid)
+            .ToList();
+
+        if (!selectedInstallmentId.HasValue)
+        {
+            return unpaidInstallments
+                .OrderBy(installment => installment.InstallmentNumber)
+                .ToList();
+        }
+
+        var selectedInstallment = installmentList.FirstOrDefault(installment => installment.Id == selectedInstallmentId.Value)
+            ?? throw new KeyNotFoundException("Cuota seleccionada no encontrada.");
+
+        return unpaidInstallments
+            .OrderBy(installment => installment.InstallmentNumber <= selectedInstallment.InstallmentNumber ? 0 : 1)
+            .ThenBy(installment => installment.InstallmentNumber)
+            .ToList();
     }
 }
