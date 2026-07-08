@@ -137,6 +137,155 @@ function dateInputValue(value?: string) {
   return value ? value.slice(0, 10) : new Date().toISOString().slice(0, 10);
 }
 
+function printableText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapePdfText(value: string) {
+  return printableText(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function truncatePdfText(value: string, maxLength: number) {
+  const text = printableText(value);
+  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 3))}...` : text;
+}
+
+function pdfText(x: number, y: number, value: string, size = 9, font = "F1") {
+  return `BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfText(value)}) Tj ET`;
+}
+
+function pdfLine(x1: number, y1: number, x2: number, y2: number) {
+  return `${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`;
+}
+
+function buildPaymentTablePdf(detail: LoanDetail) {
+  const pageWidth = 842;
+  const pageHeight = 595;
+  const margin = 32;
+  const rowHeight = 18;
+  const columns = [
+    { title: "#", width: 28, max: 4 },
+    { title: "Vence", width: 92, max: 18 },
+    { title: "Capital", width: 90, max: 18 },
+    { title: "Interes", width: 90, max: 18 },
+    { title: "Cuota", width: 90, max: 18 },
+    { title: "Pagado", width: 90, max: 18 },
+    { title: "Pendiente", width: 95, max: 18 },
+    { title: "Saldo", width: 90, max: 18 },
+    { title: "Estado", width: 85, max: 16 }
+  ];
+  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
+  const currency = currencyLabels[detail.loan.currency];
+  const rows = detail.installments.map((installment) => [
+    String(installment.installmentNumber),
+    dateOnly(installment.dueDate),
+    money(installment.principalAmount, currency),
+    money(installment.interestAmount, currency),
+    money(installment.paymentAmount, currency),
+    money(installment.amountPaid, currency),
+    money(installmentPendingAmount(installment), currency),
+    money(installment.remainingBalance, currency),
+    installmentStatusLabels[installment.status]
+  ]);
+
+  const pages: string[] = [];
+  let rowIndex = 0;
+  let pageNumber = 1;
+
+  while (rowIndex < rows.length || pages.length === 0) {
+    const lines: string[] = ["0.2 w"];
+    let y = pageHeight - margin;
+
+    lines.push(pdfText(margin, y, "CrediPrest - Tabla de pagos", 16, "F2"));
+    lines.push(pdfText(pageWidth - 115, y, `Pagina ${pageNumber}`, 8));
+    y -= 22;
+    lines.push(pdfText(margin, y, `Cliente: ${detail.loan.clientName}`, 10, "F2"));
+    lines.push(pdfText(360, y, `Frecuencia: ${frequencyLabels[detail.loan.paymentFrequency]}`, 10));
+    y -= 16;
+    lines.push(pdfText(margin, y, `Prestado: ${money(detail.loan.principalAmount, currency)}`, 9));
+    lines.push(pdfText(190, y, `Interes mensual: ${detail.loan.monthlyInterestRate}%`, 9));
+    lines.push(pdfText(360, y, `Total: ${money(detail.loan.totalToPay, currency)}`, 9));
+    lines.push(pdfText(520, y, `Pagado: ${money(detail.loan.totalPaid, currency)}`, 9));
+    lines.push(pdfText(670, y, `Saldo: ${money(detail.loan.pendingBalance, currency)}`, 9));
+    y -= 22;
+
+    const tableLeft = margin;
+    const headerTop = y + 6;
+    const headerBottom = y - rowHeight + 5;
+    lines.push(pdfLine(tableLeft, headerTop, tableLeft + tableWidth, headerTop));
+    lines.push(pdfLine(tableLeft, headerBottom, tableLeft + tableWidth, headerBottom));
+
+    let x = tableLeft + 4;
+    columns.forEach((column) => {
+      lines.push(pdfText(x, y - 7, column.title, 8, "F2"));
+      x += column.width;
+    });
+    y -= rowHeight;
+
+    while (rowIndex < rows.length && y > margin + 32) {
+      x = tableLeft + 4;
+      columns.forEach((column, columnIndex) => {
+        lines.push(pdfText(x, y - 7, truncatePdfText(rows[rowIndex][columnIndex], column.max), 8));
+        x += column.width;
+      });
+      lines.push(pdfLine(tableLeft, y - rowHeight + 5, tableLeft + tableWidth, y - rowHeight + 5));
+      y -= rowHeight;
+      rowIndex += 1;
+    }
+
+    lines.push(pdfText(margin, margin, `Generado: ${dateOnly(new Date().toISOString())}`, 8));
+    pages.push(lines.join("\n"));
+    pageNumber += 1;
+  }
+
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pages.map((_, index) => `${5 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
+  ];
+
+  pages.forEach((content, index) => {
+    const contentObjectId = 6 + index * 2;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+function downloadPaymentTablePdf(detail: LoanDetail) {
+  const blob = buildPaymentTablePdf(detail);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const clientName = printableText(detail.loan.clientName).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  link.href = url;
+  link.download = `tabla-pagos-${clientName || "prestamo"}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function defaultPaymentInstallment(installments: Installment[]) {
   const ordered = [...installments].sort((left, right) => dateInputValue(left.dueDate).localeCompare(dateInputValue(right.dueDate)));
   const today = dateInputValue();
@@ -543,6 +692,16 @@ export default function App() {
     }
   }
 
+  async function downloadLoanPdf(id: string) {
+    try {
+      setError(null);
+      const detail = loanDetail?.loan.id === id ? loanDetail : await api.loanDetail(id);
+      downloadPaymentTablePdf(detail);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo descargar la tabla de pagos");
+    }
+  }
+
   const overdueLoans = useMemo(() => loans.filter((loan) => loan.status === 3), [loans]);
   const activeLoans = useMemo(() => loans.filter((loan) => loan.status === 1), [loans]);
   const activeClients = useMemo(() => clients.filter((client) => client.isActive), [clients]);
@@ -637,6 +796,7 @@ export default function App() {
             submitLoan={submitLoan}
             openLoan={openLoan}
             setEditingLoan={startEditingLoan}
+            downloadLoanPdf={downloadLoanPdf}
             deleteLoan={deleteLoan}
             cancelLoan={async (id) => {
               await api.cancelLoan(id);
@@ -927,6 +1087,7 @@ function LoansView(props: {
   submitLoan: (event: FormEvent<HTMLFormElement>) => void;
   openLoan: (id: string) => void | Promise<void>;
   setEditingLoan: (loan: Loan | null) => void;
+  downloadLoanPdf: (id: string) => void | Promise<void>;
   cancelLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => void | Promise<void>;
 }) {
@@ -1028,6 +1189,7 @@ function LoansView(props: {
                     <td>{frequencyLabels[loan.paymentFrequency]}</td>
                     <td className="row-actions">
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
+                      <button type="button" className="ghost" onClick={() => props.downloadLoanPdf(loan.id)}>PDF</button>
                       {loan.status !== 2 && <button type="button" className="ghost" onClick={() => props.setEditingLoan(loan)}>Editar</button>}
                       {loan.status !== 2 && <button type="button" className="danger" onClick={() => props.cancelLoan(loan.id)}>Cancelar</button>}
                       <button type="button" className="danger" onClick={() => props.deleteLoan(loan.id)}>Eliminar</button>
@@ -1227,6 +1389,11 @@ function SettingsView() {
 function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
   return (
     <Panel title={`Tabla de pagos - ${detail.loan.clientName}`}>
+      <div className="panel-toolbar">
+        <button type="button" className="ghost" onClick={() => downloadPaymentTablePdf(detail)}>
+          Descargar PDF
+        </button>
+      </div>
       <div className="loan-summary">
         <span>Total {money(detail.loan.totalToPay, currencyLabels[detail.loan.currency])}</span>
         <span>Pagado {money(detail.loan.totalPaid, currencyLabels[detail.loan.currency])}</span>

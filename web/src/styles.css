@@ -374,7 +374,7 @@ td small {
 
 .loans-table-wrap .row-actions {
   justify-content: center;
-  min-width: 330px;
+  min-width: 390px;
 }
 
 .loans-table-wrap th:last-child {
@@ -406,6 +406,12 @@ td small {
   font-size: 1rem;
   line-height: 1.2;
   margin: 0 0 0.85rem;
+}
+
+.panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.25rem 0 0.75rem;
 }
 
 .metric-grid {
