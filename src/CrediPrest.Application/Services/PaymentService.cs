@@ -56,10 +56,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             }
 
             var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingInstallmentAmount), 2);
-            installment.AmountPaid += appliedAmount;
-            installment.Status = installment.AmountPaid >= installment.PaymentAmount
-                ? InstallmentStatus.Paid
-                : InstallmentStatus.Partial;
+            installment.AmountPaid = Math.Round(installment.AmountPaid + appliedAmount, 2);
+            installment.Status = GetInstallmentStatus(installment);
             installment.PaidAtUtc = installment.Status == InstallmentStatus.Paid ? DateTime.UtcNow : null;
 
             dbContext.Payments.Add(new Payment
@@ -109,5 +107,17 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .ToListAsync(cancellationToken);
 
         return payments.Select(payment => payment.ToDto()).ToList();
+    }
+
+    private static InstallmentStatus GetInstallmentStatus(Installment installment)
+    {
+        if (installment.AmountPaid >= installment.PaymentAmount)
+        {
+            return InstallmentStatus.Paid;
+        }
+
+        return installment.DueDate.Date < DateTime.UtcNow.Date
+            ? InstallmentStatus.Overdue
+            : InstallmentStatus.Pending;
     }
 }

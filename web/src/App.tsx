@@ -99,6 +99,10 @@ function portfolioMoney(cordobas: number, usd: number) {
   return money(cordobas);
 }
 
+function installmentPendingAmount(installment: Installment) {
+  return Math.max(0, installment.paymentAmount - installment.amountPaid);
+}
+
 function dateOnly(value: string) {
   const datePart = value.split("T")[0];
   const [year, month, day] = datePart.split("-").map(Number);
@@ -1058,7 +1062,7 @@ function PaymentsView(props: {
               <option value="">Aplicar al próximo saldo</option>
               {installments.map((installment) => (
                 <option key={installment.id} value={installment.id}>
-                  Cuota {installment.installmentNumber} - vence {dateOnly(installment.dueDate)} - {money(installment.paymentAmount - installment.amountPaid, currencyLabels[props.loanDetail?.loan.currency ?? 1])}
+                  Cuota {installment.installmentNumber} - vence {dateOnly(installment.dueDate)} - pendiente {money(installmentPendingAmount(installment), currencyLabels[props.loanDetail?.loan.currency ?? 1])}
                 </option>
               ))}
             </select>
@@ -1190,6 +1194,8 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
               <th>Capital</th>
               <th>Interés</th>
               <th>Cuota</th>
+              <th>Pagado</th>
+              <th>Pendiente</th>
               <th>Saldo</th>
               <th>Estado</th>
             </tr>
@@ -1202,6 +1208,8 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
                 <td>{money(installment.principalAmount, currencyLabels[detail.loan.currency])}</td>
                 <td>{money(installment.interestAmount, currencyLabels[detail.loan.currency])}</td>
                 <td>{money(installment.paymentAmount, currencyLabels[detail.loan.currency])}</td>
+                <td>{money(installment.amountPaid, currencyLabels[detail.loan.currency])}</td>
+                <td>{money(installmentPendingAmount(installment), currencyLabels[detail.loan.currency])}</td>
                 <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
                 <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
               </tr>

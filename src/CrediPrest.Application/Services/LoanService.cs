@@ -165,9 +165,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
 
                 installment.Status = installment.DueDate.Date < today
                     ? InstallmentStatus.Overdue
-                    : installment.AmountPaid > 0
-                        ? InstallmentStatus.Partial
-                        : InstallmentStatus.Pending;
+                    : InstallmentStatus.Pending;
             }
 
             var hasOverdue = loan.Installments.Any(installment => installment.Status == InstallmentStatus.Overdue);
