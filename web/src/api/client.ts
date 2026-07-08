@@ -1,6 +1,8 @@
 import type { Client, Dashboard, Loan, LoanDetail, LoginResponse, Payment } from "../types/models";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5052/api";
+const LOCAL_API_URL = "http://localhost:5052/api";
+const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? PRODUCTION_API_URL : LOCAL_API_URL);
 const TOKEN_KEY = "crediprest.token";
 
 export function getToken() {
