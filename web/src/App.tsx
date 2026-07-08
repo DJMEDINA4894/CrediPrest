@@ -785,6 +785,13 @@ function ClientsView(props: {
               </tr>
             </thead>
             <tbody>
+              {props.clients.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="empty-table-cell">
+                    No hay clientes registrados.
+                  </td>
+                </tr>
+              )}
               {props.clients.map((client) => (
                 <tr key={client.id}>
                   <td><strong>{client.fullName}</strong><small>{client.identificationNumber}</small></td>
@@ -1064,6 +1071,13 @@ function ReportsView({ loans, clients, overdueLoans }: { loans: Loan[]; clients:
               </tr>
             </thead>
             <tbody>
+              {loans.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="empty-table-cell">
+                    No hay datos de préstamos para mostrar.
+                  </td>
+                </tr>
+              )}
               {loans.map((loan) => (
                 <tr key={loan.id}>
                   <td>{loan.clientName}</td>
