@@ -914,7 +914,7 @@ function LoansView(props: {
             <tbody>
                 {props.loans.length === 0 && (
                    <tr>
-                      <td colSpan={6} className="empty-table-cell">
+                      <td colSpan={8} className="empty-table-cell">
                         Todavía no hay préstamos registrados.
                       </td>
                     </tr>
