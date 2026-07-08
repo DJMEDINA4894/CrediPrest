@@ -118,6 +118,33 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var loan = await dbContext.Loans
+            .Include(item => item.Client)
+            .Include(item => item.Installments)
+            .Include(item => item.Payments)
+            .FirstOrDefaultAsync(item => item.Id == id && item.Client.IsActive, cancellationToken)
+            ?? throw new KeyNotFoundException("Préstamo no encontrado.");
+
+        await using var transaction = await BeginTransactionIfAvailableAsync(cancellationToken);
+
+        var installmentIds = loan.Installments.Select(installment => installment.Id).ToList();
+        var payments = await dbContext.Payments
+            .Where(payment => payment.LoanId == id || installmentIds.Contains(payment.InstallmentId))
+            .ToListAsync(cancellationToken);
+
+        dbContext.Payments.RemoveRange(payments);
+        dbContext.Installments.RemoveRange(loan.Installments);
+        dbContext.Loans.Remove(loan);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+    }
+
     public async Task RefreshOverdueAsync(CancellationToken cancellationToken = default)
     {
         var today = DateTime.UtcNow.Date;

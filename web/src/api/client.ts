@@ -58,6 +58,7 @@ export const api = {
   createLoan: (payload: unknown) => request<LoanDetail>("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (id: string, payload: unknown) => request<LoanDetail>(`/loans/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   cancelLoan: (id: string) => request<void>(`/loans/${id}/cancel`, { method: "POST" }),
+  deleteLoan: (id: string) => request<void>(`/loans/${id}`, { method: "DELETE" }),
   payments: (loanId: string) => request<Payment[]>(`/loans/${loanId}/payments`),
   registerPayment: (payload: unknown) => request<LoanDetail>("/payments", { method: "POST", body: JSON.stringify(payload) })
 };

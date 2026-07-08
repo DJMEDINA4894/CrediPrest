@@ -87,6 +87,18 @@ function clientDebt(client: Client) {
   return money(client.pendingCordobas);
 }
 
+function portfolioMoney(cordobas: number, usd: number) {
+  if (cordobas > 0 && usd > 0) {
+    return `${money(cordobas)} / ${money(usd, "USD")}`;
+  }
+
+  if (usd > 0) {
+    return money(usd, "USD");
+  }
+
+  return money(cordobas);
+}
+
 function dateOnly(value: string) {
   const datePart = value.split("T")[0];
   const [year, month, day] = datePart.split("-").map(Number);
@@ -409,6 +421,38 @@ export default function App() {
     }
   }
 
+  async function deleteLoan(id: string) {
+    const loan = loans.find((item) => item.id === id);
+    const loanLabel = loan ? `${loan.clientName} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}` : "este préstamo";
+
+    setConfirmDialog({
+      title: "Eliminar préstamo",
+      message: `Eliminar ${loanLabel} borrará sus cuotas y pagos asociados. Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar definitivamente",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          setLoading(true);
+          setError(null);
+          await api.deleteLoan(id);
+          if (loanDetail?.loan.id === id) {
+            setLoanDetail(null);
+          }
+          if (editingLoan?.id === id) {
+            setEditingLoan(null);
+          }
+          await refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "No se pudo eliminar el préstamo");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  }
+
   async function submitLoan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -577,6 +621,7 @@ export default function App() {
             submitLoan={submitLoan}
             openLoan={openLoan}
             setEditingLoan={startEditingLoan}
+            deleteLoan={deleteLoan}
             cancelLoan={async (id) => {
               await api.cancelLoan(id);
               await refresh();
@@ -831,6 +876,7 @@ function LoansView(props: {
   openLoan: (id: string) => void | Promise<void>;
   setEditingLoan: (loan: Loan | null) => void;
   cancelLoan: (id: string) => Promise<void>;
+  deleteLoan: (id: string) => void | Promise<void>;
 }) {
   const [selectedFrequency, setSelectedFrequency] = useState<number>(props.editingLoan?.paymentFrequency ?? 3);
   const selectedTermKey = selectedFrequency as keyof typeof termLabels;
@@ -932,6 +978,7 @@ function LoansView(props: {
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
                       {loan.status !== 2 && <button type="button" className="ghost" onClick={() => props.setEditingLoan(loan)}>Editar</button>}
                       {loan.status !== 2 && <button type="button" className="danger" onClick={() => props.cancelLoan(loan.id)}>Cancelar</button>}
+                      <button type="button" className="danger" onClick={() => props.deleteLoan(loan.id)}>Eliminar</button>
                     </td>
                   </tr>
                 ))}
@@ -1050,14 +1097,20 @@ function PaymentsView(props: {
 }
 
 function ReportsView({ loans, clients, overdueLoans }: { loans: Loan[]; clients: Client[]; overdueLoans: Loan[] }) {
-  const pendingPortfolio = loans.reduce((sum, loan) => sum + loan.pendingBalance, 0);
+  const pendingCordobas = loans
+    .filter((loan) => loan.currency === 1)
+    .reduce((sum, loan) => sum + loan.pendingBalance, 0);
+  const pendingUsd = loans
+    .filter((loan) => loan.currency === 2)
+    .reduce((sum, loan) => sum + loan.pendingBalance, 0);
+
   return (
     <section className="stack">
       <div className="metric-grid">
         <Metric title="Préstamos activos" value={String(loans.filter((loan) => loan.status === 1).length)} />
         <Metric title="Préstamos vencidos" value={String(overdueLoans.length)} tone="danger" />
         <Metric title="Clientes registrados" value={String(clients.length)} />
-        <Metric title="Cartera pendiente" value={money(pendingPortfolio)} tone="warn" />
+        <Metric title="Cartera pendiente" value={portfolioMoney(pendingCordobas, pendingUsd)} tone="warn" />
       </div>
       <Panel title="Reporte de préstamos">
         <div className="table-wrap">

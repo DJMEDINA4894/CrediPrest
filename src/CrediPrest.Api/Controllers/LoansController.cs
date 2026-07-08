@@ -37,6 +37,13 @@ public sealed class LoansController(ILoanService loanService, IPaymentService pa
         return NoContent();
     }
 
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await loanService.DeleteAsync(id, cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet("{id:guid}/payments")]
     public async Task<ActionResult<IReadOnlyList<PaymentDto>>> Payments(Guid id, CancellationToken cancellationToken)
         => Ok(await paymentService.ListByLoanAsync(id, cancellationToken));

@@ -28,6 +28,7 @@ public interface ILoanService
     Task<LoanDetailDto> CreateAsync(CreateLoanRequest request, CancellationToken cancellationToken = default);
     Task<LoanDetailDto> UpdateAsync(Guid id, UpdateLoanRequest request, CancellationToken cancellationToken = default);
     Task CancelAsync(Guid id, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task RefreshOverdueAsync(CancellationToken cancellationToken = default);
 }
 
