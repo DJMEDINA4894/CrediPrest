@@ -61,6 +61,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
             PaymentFrequency = request.PaymentFrequency,
             StartDate = request.StartDate.Date,
             EndDate = GetEndDate(request.StartDate.Date, request.PaymentFrequency, request.TermMonths),
+            ReferenceName = request.ReferenceName?.Trim(),
             Notes = request.Notes?.Trim()
         };
 
@@ -93,6 +94,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
             loan.StartDate = request.StartDate.Date;
             loan.EndDate = GetEndDate(request.StartDate.Date, request.PaymentFrequency, request.TermMonths);
             loan.Status = request.Status;
+            loan.ReferenceName = request.ReferenceName?.Trim();
             loan.Notes = request.Notes?.Trim();
 
             await dbContext.DeleteInstallmentsByLoanIdAsync(id, cancellationToken);

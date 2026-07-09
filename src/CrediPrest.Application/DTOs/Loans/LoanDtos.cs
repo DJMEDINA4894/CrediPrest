@@ -18,6 +18,7 @@ public sealed record LoanDto(
     Guid Id,
     Guid ClientId,
     string ClientName,
+    string? ReferenceName,
     decimal PrincipalAmount,
     CurrencyType Currency,
     decimal MonthlyInterestRate,
@@ -44,6 +45,7 @@ public sealed record CreateLoanRequest(
     int TermMonths,
     PaymentFrequency PaymentFrequency,
     DateTime StartDate,
+    string? ReferenceName,
     string? Notes);
 
 public sealed record UpdateLoanRequest(
@@ -54,4 +56,5 @@ public sealed record UpdateLoanRequest(
     PaymentFrequency PaymentFrequency,
     DateTime StartDate,
     LoanStatus Status,
+    string? ReferenceName,
     string? Notes);

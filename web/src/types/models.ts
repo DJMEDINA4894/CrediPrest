@@ -41,6 +41,7 @@ export interface Loan {
   id: string;
   clientId: string;
   clientName: string;
+  referenceName?: string;
   principalAmount: number;
   currency: CurrencyType;
   monthlyInterestRate: number;

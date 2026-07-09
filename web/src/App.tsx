@@ -103,6 +103,10 @@ function portfolioMoney(cordobas: number, usd: number) {
   return money(cordobas);
 }
 
+function loanDisplayName(loan: Loan) {
+  return loan.referenceName?.trim() ? `${loan.clientName} - ${loan.referenceName}` : loan.clientName;
+}
+
 function dualMoney(cordobas = 0, usd = 0) {
   if (cordobas <= 0 && usd <= 0) {
     return `${money(0)} / ${money(0, "USD")}`;
@@ -207,6 +211,10 @@ function buildPaymentTablePdf(detail: LoanDetail) {
     lines.push(pdfText(margin, y, `Cliente: ${detail.loan.clientName}`, 10, "F2"));
     lines.push(pdfText(360, y, `Frecuencia: ${frequencyLabels[detail.loan.paymentFrequency]}`, 10));
     y -= 16;
+    if (detail.loan.referenceName) {
+      lines.push(pdfText(margin, y, `Referencia: ${detail.loan.referenceName}`, 9));
+      y -= 16;
+    }
     lines.push(pdfText(margin, y, `Prestado: ${money(detail.loan.principalAmount, currency)}`, 9));
     lines.push(pdfText(190, y, `Interes mensual: ${detail.loan.monthlyInterestRate}%`, 9));
     lines.push(pdfText(360, y, `Total: ${money(detail.loan.totalToPay, currency)}`, 9));
@@ -276,7 +284,7 @@ function downloadPaymentTablePdf(detail: LoanDetail) {
   const blob = buildPaymentTablePdf(detail);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  const clientName = printableText(detail.loan.clientName).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const clientName = printableText(loanDisplayName(detail.loan)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   link.href = url;
   link.download = `tabla-pagos-${clientName || "prestamo"}.pdf`;
@@ -393,6 +401,7 @@ export default function App() {
   const [loanDetail, setLoanDetail] = useState<LoanDetail | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [newLoanClientId, setNewLoanClientId] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -445,6 +454,7 @@ export default function App() {
       setLoanDetail(null);
       setEditingClient(null);
       setEditingLoan(null);
+      setNewLoanClientId("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
     } finally {
@@ -462,6 +472,7 @@ export default function App() {
     setLoanDetail(null);
     setEditingClient(null);
     setEditingLoan(null);
+    setNewLoanClientId("");
     setClientSearch("");
     setView("dashboard");
   }
@@ -581,14 +592,22 @@ export default function App() {
   function startEditingLoan(loan: Loan | null) {
     setError(null);
     setEditingLoan(loan);
+    setNewLoanClientId("");
     if (loan) {
       setView("loans");
     }
   }
 
+  function startNewLoan(clientId = "") {
+    setError(null);
+    setEditingLoan(null);
+    setNewLoanClientId(clientId);
+    setView("loans");
+  }
+
   async function deleteLoan(id: string) {
     const loan = loans.find((item) => item.id === id);
-    const loanLabel = loan ? `${loan.clientName} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}` : "este préstamo";
+    const loanLabel = loan ? `${loanDisplayName(loan)} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}` : "este préstamo";
 
     setConfirmDialog({
       title: "Eliminar préstamo",
@@ -630,6 +649,7 @@ export default function App() {
       termMonths: numberValue(form, "termMonths"),
       paymentFrequency: numberValue(form, "paymentFrequency"),
       startDate: formValue(form, "startDate"),
+      referenceName: formValue(form, "referenceName") || undefined,
       notes: formValue(form, "notes") || undefined
     };
 
@@ -641,6 +661,7 @@ export default function App() {
         : await api.createLoan(payload);
       setLoanDetail(detail);
       setEditingLoan(null);
+      setNewLoanClientId("");
       formElement.reset();
       await refresh();
       setView("loans");
@@ -792,10 +813,12 @@ export default function App() {
             loans={loans}
             loanDetail={loanDetail}
             editingLoan={editingLoan}
+            newLoanClientId={newLoanClientId}
             isSaving={loading}
             submitLoan={submitLoan}
             openLoan={openLoan}
             setEditingLoan={startEditingLoan}
+            startNewLoan={startNewLoan}
             downloadLoanPdf={downloadLoanPdf}
             deleteLoan={deleteLoan}
             cancelLoan={async (id) => {
@@ -1083,10 +1106,12 @@ function LoansView(props: {
   loans: Loan[];
   loanDetail: LoanDetail | null;
   editingLoan: Loan | null;
+  newLoanClientId: string;
   isSaving: boolean;
   submitLoan: (event: FormEvent<HTMLFormElement>) => void;
   openLoan: (id: string) => void | Promise<void>;
   setEditingLoan: (loan: Loan | null) => void;
+  startNewLoan: (clientId?: string) => void;
   downloadLoanPdf: (id: string) => void | Promise<void>;
   cancelLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => void | Promise<void>;
@@ -1102,13 +1127,25 @@ function LoansView(props: {
     <section className="stack loans-page">
       <div className="loan-form-row">
         <Panel title={props.editingLoan ? "Editar préstamo" : "Crear préstamo"}>
-          <form className="grid-form" onSubmit={props.submitLoan} key={props.editingLoan?.id ?? "new-loan"}>
+          {props.editingLoan && (
+            <div className="edit-context">
+              <span>Editando {loanDisplayName(props.editingLoan)}</span>
+              <button type="button" className="ghost" onClick={() => props.startNewLoan(props.editingLoan?.clientId)}>
+                Crear otro préstamo para este cliente
+              </button>
+            </div>
+          )}
+          <form className="grid-form" onSubmit={props.submitLoan} key={props.editingLoan?.id ?? `new-loan-${props.newLoanClientId}`}>
             <label className="field-label">
               Cliente
-              <select name="clientId" defaultValue={props.editingLoan?.clientId ?? ""} disabled={Boolean(props.editingLoan)} required>
+              <select name="clientId" defaultValue={props.editingLoan?.clientId ?? props.newLoanClientId} disabled={Boolean(props.editingLoan)} required>
               <option value="">Cliente</option>
               {props.clients.map((client) => <option key={client.id} value={client.id}>{client.fullName}</option>)}
               </select>
+            </label>
+            <label className="field-label">
+              Referencia del préstamo
+              <input name="referenceName" placeholder="Ej. Moto, negocio, emergencia" maxLength={120} defaultValue={props.editingLoan?.referenceName} />
             </label>
             <label className="field-label">
               Monto prestado
@@ -1126,10 +1163,6 @@ function LoansView(props: {
               <input name="monthlyInterestRate" type="number" min="0" step="0.01" placeholder="Ej. 10" defaultValue={props.editingLoan?.monthlyInterestRate ?? 10} required />
             </label>
             <label className="field-label">
-              {termLabels[selectedTermKey]}
-              <input name="termMonths" type="number" min="1" defaultValue={props.editingLoan?.termMonths ?? 1} placeholder={termPlaceholders[selectedTermKey]} required />
-            </label>
-            <label className="field-label">
               Frecuencia de pago
               <select name="paymentFrequency" defaultValue={String(props.editingLoan?.paymentFrequency ?? 3)} onChange={(event) => setSelectedFrequency(Number(event.target.value))}>
                 <option value="1">Semanal</option>
@@ -1138,17 +1171,21 @@ function LoansView(props: {
               </select>
             </label>
             <label className="field-label">
+              {termLabels[selectedTermKey]}
+              <input name="termMonths" type="number" min="1" defaultValue={props.editingLoan?.termMonths ?? 1} placeholder={termPlaceholders[selectedTermKey]} required />
+            </label>
+            <label className="field-label">
               Fecha de inicio
               <input name="startDate" type="date" defaultValue={dateInputValue(props.editingLoan?.startDate)} required />
             </label>
-            <label className="field-label span-2">
+            <label className="field-label">
               Observaciones
               <textarea name="notes" className="loan-notes-field" placeholder="Observaciones opcionales" defaultValue={props.editingLoan?.notes} rows={1} />
             </label>
             <div className="loan-submit-row span-3">
               <p className="form-hint loan-term-hint">El plazo se calcula por frecuencia: semanal crea pagos cada 7 días, quincenal cada 15 días y mensual cada mes.</p>
               <div className="form-actions">
-                {props.editingLoan && <button type="button" className="ghost" onClick={() => props.setEditingLoan(null)}>Cancelar edición</button>}
+                {props.editingLoan && <button type="button" className="ghost" onClick={() => props.startNewLoan(props.editingLoan?.clientId)}>Cancelar edición</button>}
                 <button type="submit" disabled={props.isSaving}>{props.isSaving ? "Guardando..." : props.editingLoan ? "Guardar cambios" : "Crear y generar cuotas"}</button>
               </div>
             </div>
@@ -1180,7 +1217,7 @@ function LoansView(props: {
                 )}
                 {props.loans.map((loan) => (
                   <tr key={loan.id} className={props.loanDetail?.loan.id === loan.id ? "selected-row" : undefined}>
-                    <td>{loan.clientName}</td>
+                    <td>{loan.clientName}{loan.referenceName && <small>{loan.referenceName}</small>}</td>
                     <td>{money(loan.principalAmount, currencyLabels[loan.currency])}</td>
                     <td>{loan.monthlyInterestRate}% mensual</td>
                     <td>{loan.termMonths}</td>
@@ -1190,6 +1227,7 @@ function LoansView(props: {
                     <td className="row-actions">
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
                       <button type="button" className="ghost" onClick={() => props.downloadLoanPdf(loan.id)}>PDF</button>
+                      <button type="button" className="ghost" onClick={() => props.startNewLoan(loan.clientId)}>Nuevo</button>
                       {loan.status !== 2 && <button type="button" className="ghost" onClick={() => props.setEditingLoan(loan)}>Editar</button>}
                       {loan.status !== 2 && <button type="button" className="danger" onClick={() => props.cancelLoan(loan.id)}>Cancelar</button>}
                       <button type="button" className="danger" onClick={() => props.deleteLoan(loan.id)}>Eliminar</button>
@@ -1252,7 +1290,7 @@ function PaymentsView(props: {
             <select name="loanId" required value={props.loanDetail?.loan.id ?? ""} onChange={(event) => event.target.value && props.openLoan(event.target.value)}>
               <option value="">Selecciona préstamo</option>
               {props.loans.filter((loan) => loan.status !== 2).map((loan) => (
-                <option key={loan.id} value={loan.id}>{loan.clientName} - {money(loan.pendingBalance, currencyLabels[loan.currency])}</option>
+                <option key={loan.id} value={loan.id}>{loanDisplayName(loan)} - {money(loan.pendingBalance, currencyLabels[loan.currency])}</option>
               ))}
             </select>
           </label>
@@ -1349,7 +1387,7 @@ function ReportsView({ loans, clients, overdueLoans }: { loans: Loan[]; clients:
               )}
               {loans.map((loan) => (
                 <tr key={loan.id}>
-                  <td>{loan.clientName}</td>
+                  <td>{loan.clientName}{loan.referenceName && <small>{loan.referenceName}</small>}</td>
                   <td>{currencyLabels[loan.currency]}</td>
                   <td>{money(loan.totalToPay, currencyLabels[loan.currency])}</td>
                   <td>{money(loan.totalPaid, currencyLabels[loan.currency])}</td>
@@ -1388,13 +1426,14 @@ function SettingsView() {
 
 function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
   return (
-    <Panel title={`Tabla de pagos - ${detail.loan.clientName}`}>
+    <Panel title={`Tabla de pagos - ${loanDisplayName(detail.loan)}`}>
       <div className="panel-toolbar">
         <button type="button" className="ghost" onClick={() => downloadPaymentTablePdf(detail)}>
           Descargar PDF
         </button>
       </div>
       <div className="loan-summary">
+        {detail.loan.referenceName && <span>Referencia {detail.loan.referenceName}</span>}
         <span>Total {money(detail.loan.totalToPay, currencyLabels[detail.loan.currency])}</span>
         <span>Pagado {money(detail.loan.totalPaid, currencyLabels[detail.loan.currency])}</span>
         <span>Saldo {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>

@@ -374,7 +374,7 @@ td small {
 
 .loans-table-wrap .row-actions {
   justify-content: center;
-  min-width: 390px;
+  min-width: 455px;
 }
 
 .loans-table-wrap th:last-child {
@@ -383,6 +383,23 @@ td small {
 
 .loan-notes-field {
   min-height: 43px;
+}
+
+.edit-context {
+  align-items: center;
+  background: #eef5f4;
+  border: 1px solid #d2e4e1;
+  border-radius: 8px;
+  color: #294957;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.edit-context span {
+  font-weight: 800;
 }
 
 .client-notes-field {

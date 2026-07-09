@@ -66,6 +66,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .WithMany(client => client.Loans)
                 .HasForeignKey(loan => loan.ClientId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(loan => loan.ReferenceName).HasMaxLength(120);
             entity.Property(loan => loan.PrincipalAmount).HasPrecision(18, 2);
             entity.Property(loan => loan.MonthlyInterestRate).HasPrecision(9, 4);
             entity.Property(loan => loan.TotalInterest).HasPrecision(18, 2);
