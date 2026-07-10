@@ -4,6 +4,7 @@ using CrediPrest.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CrediPrest.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260710183531_AddLoanAgreementFields")]
+    partial class AddLoanAgreementFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -240,50 +243,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.ToTable("Loans", (string)null);
                 });
 
-            modelBuilder.Entity("CrediPrest.Domain.Entities.LoanCharge", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Amount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<decimal>("AmountPaid")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("AppliedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("LoanId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)");
-
-                    b.Property<DateTime>("PeriodEndDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("PeriodNumber")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("PeriodStartDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LoanId", "Type", "PeriodNumber")
-                        .IsUnique();
-
-                    b.ToTable("LoanCharges", (string)null);
-                });
-
             modelBuilder.Entity("CrediPrest.Domain.Entities.LoanStatusCatalog", b =>
                 {
                     b.Property<int>("Id")
@@ -374,10 +333,7 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("InstallmentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("LoanChargeId")
+                    b.Property<Guid>("InstallmentId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("LoanId")
@@ -400,8 +356,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("InstallmentId");
-
-                    b.HasIndex("LoanChargeId");
 
                     b.HasIndex("LoanId");
 
@@ -548,17 +502,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.Navigation("LenderUser");
                 });
 
-            modelBuilder.Entity("CrediPrest.Domain.Entities.LoanCharge", b =>
-                {
-                    b.HasOne("CrediPrest.Domain.Entities.Loan", "Loan")
-                        .WithMany("Charges")
-                        .HasForeignKey("LoanId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Loan");
-                });
-
             modelBuilder.Entity("CrediPrest.Domain.Entities.Notification", b =>
                 {
                     b.HasOne("CrediPrest.Domain.Entities.User", "User")
@@ -575,12 +518,8 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.HasOne("CrediPrest.Domain.Entities.Installment", "Installment")
                         .WithMany("Payments")
                         .HasForeignKey("InstallmentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("CrediPrest.Domain.Entities.LoanCharge", "LoanCharge")
-                        .WithMany("Payments")
-                        .HasForeignKey("LoanChargeId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("CrediPrest.Domain.Entities.Loan", "Loan")
                         .WithMany("Payments")
@@ -591,8 +530,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.Navigation("Installment");
 
                     b.Navigation("Loan");
-
-                    b.Navigation("LoanCharge");
                 });
 
             modelBuilder.Entity("CrediPrest.Domain.Entities.User", b =>
@@ -617,15 +554,8 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("CrediPrest.Domain.Entities.Loan", b =>
                 {
-                    b.Navigation("Charges");
-
                     b.Navigation("Installments");
 
-                    b.Navigation("Payments");
-                });
-
-            modelBuilder.Entity("CrediPrest.Domain.Entities.LoanCharge", b =>
-                {
                     b.Navigation("Payments");
                 });
 

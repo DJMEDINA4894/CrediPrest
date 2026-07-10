@@ -21,4 +21,8 @@
     <ProjectReference Include="..\CrediPrest.Infrastructure\CrediPrest.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Templates\ACUERDO DE PRESTAMO.docx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

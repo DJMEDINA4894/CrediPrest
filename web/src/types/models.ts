@@ -43,7 +43,9 @@ export interface Loan {
   id: string;
   clientId: string;
   clientName: string;
+  clientIdentificationNumber: string;
   lenderName?: string;
+  lenderIdentificationNumber?: string;
   referenceName?: string;
   principalAmount: number;
   currency: CurrencyType;
@@ -56,8 +58,13 @@ export interface Loan {
   totalInterest: number;
   totalToPay: number;
   totalPaid: number;
+  lateFeesTotal: number;
+  lateFeesPaid: number;
+  lateFeesPending: number;
   pendingBalance: number;
   notes?: string;
+  agreementCity?: string;
+  lateFeeDescription?: string;
 }
 
 export interface Installment {
@@ -73,15 +80,29 @@ export interface Installment {
   amountPaid: number;
 }
 
+export interface LoanCharge {
+  id: string;
+  type: number;
+  periodNumber: number;
+  periodStartDate: string;
+  periodEndDate: string;
+  amount: number;
+  amountPaid: number;
+  pendingAmount: number;
+  notes?: string;
+}
+
 export interface LoanDetail {
   loan: Loan;
   installments: Installment[];
+  charges: LoanCharge[];
 }
 
 export interface Payment {
   id: string;
   loanId: string;
-  installmentId: string;
+  installmentId?: string;
+  loanChargeId?: string;
   paymentDate: string;
   amountPaid: number;
   paymentMethod: PaymentMethod;

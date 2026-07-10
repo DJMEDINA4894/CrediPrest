@@ -16,59 +16,44 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El monto pagado debe ser mayor que cero.");
         }
 
+        await loanService.RefreshOverdueAsync(cancellationToken);
+
         var loan = await ApplyOwnershipFilter(dbContext.Loans)
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
+            .Include(item => item.Charges)
             .FirstOrDefaultAsync(item => item.Id == request.LoanId && item.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
 
-        if (loan.Status == LoanStatus.Cancelled && loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid))
+        if (loan.Status == LoanStatus.Cancelled
+            && loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
+            && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
         {
             throw new InvalidOperationException("El préstamo ya está cancelado.");
         }
 
         var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
+        var today = DateTime.UtcNow.Date;
+        var overdueInstallments = orderedInstallments.Where(installment => installment.DueDate.Date < today).ToList();
+        var currentInstallments = orderedInstallments.Where(installment => installment.DueDate.Date >= today).ToList();
+        var pendingCharges = loan.Charges
+            .Where(charge => charge.AmountPaid < charge.Amount)
+            .OrderBy(charge => charge.PeriodNumber)
+            .ToList();
 
         var remainingPayment = request.AmountPaid;
-        foreach (var installment in orderedInstallments)
-        {
-            if (remainingPayment <= 0)
-            {
-                break;
-            }
-
-            var pendingInstallmentAmount = installment.PaymentAmount - installment.AmountPaid;
-            if (pendingInstallmentAmount <= 0)
-            {
-                continue;
-            }
-
-            var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingInstallmentAmount), 2);
-            installment.AmountPaid = Math.Round(installment.AmountPaid + appliedAmount, 2);
-            installment.Status = GetInstallmentStatus(installment);
-            installment.PaidAtUtc = installment.Status == InstallmentStatus.Paid ? DateTime.UtcNow : null;
-
-            dbContext.Payments.Add(new Payment
-            {
-                LoanId = loan.Id,
-                InstallmentId = installment.Id,
-                PaymentDate = request.PaymentDate.Date,
-                AmountPaid = appliedAmount,
-                PaymentMethod = request.PaymentMethod,
-                ReferenceNumber = request.ReferenceNumber?.Trim(),
-                Notes = request.Notes?.Trim()
-            });
-
-            remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
-        }
+        remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request);
+        remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request);
+        remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request);
 
         if (remainingPayment > 0)
         {
             throw new InvalidOperationException("El pago excede el saldo pendiente del préstamo.");
         }
 
-        if (loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid))
+        if (loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
+            && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
         {
             loan.Status = LoanStatus.Cancelled;
         }
@@ -80,6 +65,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
+            .Include(item => item.Charges)
             .FirstAsync(item => item.Id == loan.Id, cancellationToken);
 
         return updatedLoan.ToDetailDto();
@@ -89,6 +75,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
     {
         var paymentsQuery = dbContext.Payments
             .Include(payment => payment.Loan)
+            .Include(payment => payment.LoanCharge)
             .Where(payment => payment.LoanId == loanId)
             .Where(payment => payment.Loan.Client.IsActive);
 
@@ -116,6 +103,78 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             ? InstallmentStatus.Overdue
             : InstallmentStatus.Pending;
     }
+
+    private decimal ApplyToInstallments(
+        Loan loan,
+        IEnumerable<Installment> installments,
+        decimal remainingPayment,
+        RegisterPaymentRequest request)
+    {
+        foreach (var installment in installments)
+        {
+            if (remainingPayment <= 0)
+            {
+                break;
+            }
+
+            var pendingInstallmentAmount = installment.PaymentAmount - installment.AmountPaid;
+            if (pendingInstallmentAmount <= 0)
+            {
+                continue;
+            }
+
+            var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingInstallmentAmount), 2);
+            installment.AmountPaid = Math.Round(installment.AmountPaid + appliedAmount, 2);
+            installment.Status = GetInstallmentStatus(installment);
+            installment.PaidAtUtc = installment.Status == InstallmentStatus.Paid ? DateTime.UtcNow : null;
+
+            AddPayment(loan.Id, installment.Id, null, appliedAmount, request);
+            remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
+        }
+
+        return remainingPayment;
+    }
+
+    private decimal ApplyToCharges(
+        Loan loan,
+        IEnumerable<LoanCharge> charges,
+        decimal remainingPayment,
+        RegisterPaymentRequest request)
+    {
+        foreach (var charge in charges)
+        {
+            if (remainingPayment <= 0)
+            {
+                break;
+            }
+
+            var pendingChargeAmount = charge.Amount - charge.AmountPaid;
+            if (pendingChargeAmount <= 0)
+            {
+                continue;
+            }
+
+            var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingChargeAmount), 2);
+            charge.AmountPaid = Math.Round(charge.AmountPaid + appliedAmount, 2);
+            AddPayment(loan.Id, null, charge.Id, appliedAmount, request);
+            remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
+        }
+
+        return remainingPayment;
+    }
+
+    private void AddPayment(Guid loanId, Guid? installmentId, Guid? loanChargeId, decimal amount, RegisterPaymentRequest request)
+        => dbContext.Payments.Add(new Payment
+        {
+            LoanId = loanId,
+            InstallmentId = installmentId,
+            LoanChargeId = loanChargeId,
+            PaymentDate = request.PaymentDate.Date,
+            AmountPaid = amount,
+            PaymentMethod = request.PaymentMethod,
+            ReferenceNumber = request.ReferenceNumber?.Trim(),
+            Notes = request.Notes?.Trim()
+        });
 
     private static List<Installment> GetInstallmentsInPaymentOrder(IEnumerable<Installment> installments, Guid? selectedInstallmentId)
     {

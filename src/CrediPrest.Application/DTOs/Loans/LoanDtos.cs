@@ -14,11 +14,24 @@ public sealed record InstallmentDto(
     DateTime? PaidAtUtc,
     decimal AmountPaid);
 
+public sealed record LoanChargeDto(
+    Guid Id,
+    int Type,
+    int PeriodNumber,
+    DateTime PeriodStartDate,
+    DateTime PeriodEndDate,
+    decimal Amount,
+    decimal AmountPaid,
+    decimal PendingAmount,
+    string? Notes);
+
 public sealed record LoanDto(
     Guid Id,
     Guid ClientId,
     string ClientName,
+    string ClientIdentificationNumber,
     string? LenderName,
+    string? LenderIdentificationNumber,
     string? ReferenceName,
     decimal PrincipalAmount,
     CurrencyType Currency,
@@ -31,12 +44,18 @@ public sealed record LoanDto(
     decimal TotalInterest,
     decimal TotalToPay,
     decimal TotalPaid,
+    decimal LateFeesTotal,
+    decimal LateFeesPaid,
+    decimal LateFeesPending,
     decimal PendingBalance,
-    string? Notes);
+    string? Notes,
+    string? AgreementCity,
+    string? LateFeeDescription);
 
 public sealed record LoanDetailDto(
     LoanDto Loan,
-    IReadOnlyList<InstallmentDto> Installments);
+    IReadOnlyList<InstallmentDto> Installments,
+    IReadOnlyList<LoanChargeDto> Charges);
 
 public sealed record CreateLoanRequest(
     Guid ClientId,
@@ -47,7 +66,9 @@ public sealed record CreateLoanRequest(
     PaymentFrequency PaymentFrequency,
     DateTime StartDate,
     string? ReferenceName,
-    string? Notes);
+    string? Notes,
+    string? AgreementCity,
+    string? LateFeeDescription);
 
 public sealed record UpdateLoanRequest(
     decimal PrincipalAmount,
@@ -58,4 +79,6 @@ public sealed record UpdateLoanRequest(
     DateTime StartDate,
     LoanStatus Status,
     string? ReferenceName,
-    string? Notes);
+    string? Notes,
+    string? AgreementCity,
+    string? LateFeeDescription);

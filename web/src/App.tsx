@@ -227,6 +227,10 @@ function buildPaymentTablePdf(detail: LoanDetail) {
     lines.push(pdfText(520, y, `Pagado: ${money(detail.loan.totalPaid, currency)}`, 9));
     lines.push(pdfText(670, y, `Debe: ${money(detail.loan.pendingBalance, currency)}`, 9));
     y -= 22;
+    if (detail.loan.lateFeesPending > 0) {
+      lines.push(pdfText(margin, y, `Mora pendiente: ${money(detail.loan.lateFeesPending, currency)}`, 9, "F2"));
+      y -= 18;
+    }
 
     const tableLeft = margin;
     const headerTop = y + 6;
@@ -298,6 +302,21 @@ function downloadPaymentTablePdf(detail: LoanDetail) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function downloadLoanAgreement(detail: LoanDetail) {
+  return api.loanAgreement(detail.loan.id).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const clientName = printableText(loanDisplayName(detail.loan)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+    link.href = url;
+    link.download = `acuerdo-prestamo-${clientName || "prestamo"}.docx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
 }
 
 function defaultPaymentInstallment(installments: Installment[]) {
@@ -444,9 +463,76 @@ function getClientFormError(form: HTMLFormElement) {
   return invalidControl.validationMessage || "Revisa los campos marcados antes de guardar.";
 }
 
+function claimValue(payload: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (Array.isArray(value)) {
+      return String(value[0] ?? "");
+    }
+
+    if (typeof value === "string" || typeof value === "number") {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function sessionFromToken(token: string | null): LoginResponse | null {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const [, payloadPart] = token.split(".");
+    if (!payloadPart) {
+      return null;
+    }
+
+    const normalizedPayload = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = normalizedPayload.padEnd(Math.ceil(normalizedPayload.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(paddedPayload)) as Record<string, unknown>;
+    const expiration = Number(payload.exp ?? 0);
+
+    if (expiration && expiration * 1000 <= Date.now()) {
+      return null;
+    }
+
+    const role = claimValue(payload, [
+      "role",
+      "roles",
+      "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+    ]);
+
+    if (role !== "Admin" && role !== "Lender" && role !== "Client") {
+      return null;
+    }
+
+    return {
+      token,
+      userId: claimValue(payload, [
+        "sub",
+        "nameid",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+      ]),
+      userName: claimValue(payload, ["name", "unique_name"]),
+      email: claimValue(payload, [
+        "email",
+        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
+      ]),
+      fullName: claimValue(payload, ["fullName"]) || claimValue(payload, ["name", "unique_name"]),
+      role,
+      clientId: claimValue(payload, ["clientId"]) || undefined
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
-  const [tokenAvailable, setTokenAvailable] = useState(Boolean(getToken()));
-  const [session, setSession] = useState<LoginResponse | null>(null);
+  const restoredSession = sessionFromToken(getToken());
+  const [tokenAvailable, setTokenAvailable] = useState(Boolean(restoredSession));
+  const [session, setSession] = useState<LoginResponse | null>(restoredSession);
   const [loginMode, setLoginMode] = useState<"staff" | "client">("staff");
   const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [view, setView] = useState<View>("dashboard");
@@ -464,11 +550,13 @@ export default function App() {
   const [clientSearch, setClientSearch] = useState("");
   const [appFontSize, setAppFontSize] = useState(savedAppFontSize);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
 
   async function refresh(search = clientSearch) {
-    setLoading(true);
+    setRefreshing(true);
     setError(null);
     try {
       if (session?.role === "Client") {
@@ -510,7 +598,7 @@ export default function App() {
         setError(err instanceof Error ? err.message : "No se pudo actualizar la información.");
       }
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -610,7 +698,7 @@ export default function App() {
     };
 
     try {
-      setLoading(true);
+      setSaving(true);
       setError(null);
       if (editingClient) {
         await api.updateClient(editingClient.id, { ...payload, isActive: editingClient.isActive });
@@ -623,7 +711,7 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el cliente");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
@@ -743,11 +831,13 @@ export default function App() {
       paymentFrequency: numberValue(form, "paymentFrequency"),
       startDate: formValue(form, "startDate"),
       referenceName: formValue(form, "referenceName") || undefined,
-      notes: formValue(form, "notes") || undefined
+      notes: formValue(form, "notes") || undefined,
+      agreementCity: formValue(form, "agreementCity") || undefined,
+      lateFeeDescription: formValue(form, "lateFeeDescription") || undefined
     };
 
     try {
-      setLoading(true);
+      setSaving(true);
       setError(null);
       const detail = editingLoan
         ? await api.updateLoan(editingLoan.id, { ...payload, status: editingLoan.status })
@@ -761,7 +851,7 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el préstamo");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
@@ -822,7 +912,7 @@ export default function App() {
     };
 
     try {
-      setLoading(true);
+      setSaving(true);
       setError(null);
       if (editingUser) {
         await api.updateUser(editingUser.id, {
@@ -845,7 +935,7 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el usuario");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
@@ -922,16 +1012,6 @@ export default function App() {
       setNotifications((items) => items.map((item) => item.id === id ? { ...item, isRead: true } : item));
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo actualizar la notificación");
-    }
-  }
-
-  async function downloadLoanPdf(id: string) {
-    try {
-      setError(null);
-      const detail = loanDetail?.loan.id === id ? loanDetail : await api.loanDetail(id);
-      downloadPaymentTablePdf(detail);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo descargar la tabla de pagos");
     }
   }
 
@@ -1096,7 +1176,17 @@ export default function App() {
             <h1>{viewLabel(view)}</h1>
           </div>
           <div className="top-actions">
-            <button type="button" onClick={() => refresh()} disabled={loading}>{loading ? "Actualizando..." : "Actualizar"}</button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void refresh();
+              }}
+              disabled={refreshing || loading || saving}
+            >
+              {refreshing ? "Actualizando..." : "Actualizar"}
+            </button>
           </div>
         </header>
 
@@ -1114,7 +1204,7 @@ export default function App() {
             refresh={refresh}
             submitClient={submitClient}
             setEditingClient={startEditingClient}
-            isSaving={loading}
+            isSaving={saving}
             setClientActive={setClientActive}
             deleteClient={deleteClient}
           />
@@ -1126,12 +1216,11 @@ export default function App() {
             loanDetail={loanDetail}
             editingLoan={editingLoan}
             newLoanClientId={newLoanClientId}
-            isSaving={loading}
+            isSaving={saving}
             submitLoan={submitLoan}
             openLoan={openLoan}
             setEditingLoan={startEditingLoan}
             startNewLoan={startNewLoan}
-            downloadLoanPdf={downloadLoanPdf}
             deleteLoan={deleteLoan}
             cancelLoan={async (id) => {
               await api.cancelLoan(id);
@@ -1151,7 +1240,7 @@ export default function App() {
             submitUser={submitUser}
             setUserActive={setUserActive}
             deleteUser={deleteUser}
-            isSaving={loading}
+            isSaving={saving}
           />
         )}
         {view === "settings" && (
@@ -1467,7 +1556,6 @@ function LoansView(props: {
   openLoan: (id: string) => void | Promise<void>;
   setEditingLoan: (loan: Loan | null) => void;
   startNewLoan: (clientId?: string) => void;
-  downloadLoanPdf: (id: string) => void | Promise<void>;
   cancelLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => void | Promise<void>;
 }) {
@@ -1537,6 +1625,14 @@ function LoansView(props: {
               Observaciones
               <textarea name="notes" className="loan-notes-field" placeholder="Observaciones opcionales" defaultValue={props.editingLoan?.notes} rows={1} />
             </label>
+            <label className="field-label">
+              Ciudad del acuerdo
+              <input name="agreementCity" placeholder="Ej. Managua" maxLength={120} defaultValue={props.editingLoan?.agreementCity} />
+            </label>
+            <label className="field-label">
+              Recargo por mora
+              <input name="lateFeeDescription" placeholder="Ej. 50" maxLength={220} defaultValue={props.editingLoan?.lateFeeDescription} />
+            </label>
             <div className="loan-submit-row span-3">
               <p className="form-hint loan-term-hint">El plazo se calcula por frecuencia: semanal crea pagos cada 7 días, quincenal cada 15 días y mensual cada mes.</p>
               <div className="form-actions">
@@ -1558,14 +1654,13 @@ function LoansView(props: {
                 <th>Cantidad pagos</th>
                 <th>Estado</th>
                 <th>Debe</th>
-                <th>Frecuencia</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
                 {props.loans.length === 0 && (
                    <tr>
-                      <td colSpan={8} className="empty-table-cell">
+                      <td colSpan={7} className="empty-table-cell">
                         Todavía no hay préstamos registrados.
                       </td>
                     </tr>
@@ -1578,10 +1673,8 @@ function LoansView(props: {
                     <td>{loan.termMonths}</td>
                     <td><span className={`badge status-${loan.status}`}>{statusLabels[loan.status]}</span></td>
                     <td>{money(loan.pendingBalance, currencyLabels[loan.currency])}</td>
-                    <td>{frequencyLabels[loan.paymentFrequency]}</td>
                     <td className="row-actions">
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
-                      <button type="button" className="ghost" onClick={() => props.downloadLoanPdf(loan.id)}>PDF</button>
                       <button type="button" className="ghost" onClick={() => props.startNewLoan(loan.clientId)}>Nuevo</button>
                       {loan.status !== 2 && <button type="button" className="ghost" onClick={() => props.setEditingLoan(loan)}>Editar</button>}
                       {loan.status !== 2 && <button type="button" className="danger" onClick={() => props.cancelLoan(loan.id)}>Cancelar</button>}
@@ -1637,10 +1730,11 @@ function PaymentsView(props: {
   }, [installments]);
 
   return (
-    <section className="two-col">
-      <Panel title="Registrar pago">
-        <form className="grid-form" onSubmit={props.submitPayment}>
-          <label className="field-label span-2">
+    <section className="stack payments-page">
+      <div className="payment-form-row">
+        <Panel title="Registrar pago">
+          <form className="grid-form" onSubmit={props.submitPayment}>
+          <label className="field-label">
             Préstamo
             <select name="loanId" required value={props.loanDetail?.loan.id ?? ""} onChange={(event) => event.target.value && props.openLoan(event.target.value)}>
               <option value="">Selecciona préstamo</option>
@@ -1649,7 +1743,7 @@ function PaymentsView(props: {
               ))}
             </select>
           </label>
-          <label className="field-label span-2">
+          <label className="field-label">
             Cuota a pagar
             <select
               name="installmentId"
@@ -1695,9 +1789,15 @@ function PaymentsView(props: {
             Observaciones
             <textarea name="notes" placeholder="Observaciones opcionales" />
           </label>
-          <button type="submit" className="span-2">Registrar pago</button>
-        </form>
-      </Panel>
+          <div className="payment-submit-row span-3">
+            <p className="form-hint">Si hay cuotas atrasadas, el pago se aplica primero a lo vencido, luego a mora pendiente y después a cuotas actuales.</p>
+            <div className="form-actions">
+              <button type="submit">Registrar pago</button>
+            </div>
+          </div>
+          </form>
+        </Panel>
+      </div>
       {props.loanDetail ? <LoanDetailPanel detail={props.loanDetail} /> : <Panel title="Detalle"><p className="muted">Selecciona un préstamo para ver sus cuotas pendientes.</p></Panel>}
     </section>
   );
@@ -1974,20 +2074,34 @@ function SettingsView({ fontSize, setFontSize }: { fontSize: number; setFontSize
 }
 
 function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
+  const [agreementError, setAgreementError] = useState("");
+
   return (
     <Panel title={`Tabla de pagos - ${loanDisplayName(detail.loan)}`}>
       <div className="panel-toolbar">
         <button type="button" className="ghost" onClick={() => downloadPaymentTablePdf(detail)}>
           Descargar PDF
         </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            setAgreementError("");
+            downloadLoanAgreement(detail).catch((error) => {
+              setAgreementError(error instanceof Error ? error.message : "No se pudo descargar el acuerdo.");
+            });
+          }}
+        >
+          Descargar acuerdo
+        </button>
       </div>
+      {agreementError && <p className="form-error">{agreementError}</p>}
       <div className="loan-summary">
-        {detail.loan.lenderName && <span>Prestamista {detail.loan.lenderName}</span>}
         {detail.loan.referenceName && <span>Referencia {detail.loan.referenceName}</span>}
         <span>Total {money(detail.loan.totalToPay, currencyLabels[detail.loan.currency])}</span>
         <span>Pagado {money(detail.loan.totalPaid, currencyLabels[detail.loan.currency])}</span>
+        {detail.loan.lateFeesPending > 0 && <span>Mora pendiente {money(detail.loan.lateFeesPending, currencyLabels[detail.loan.currency])}</span>}
         <span>Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>
-        <span>{frequencyLabels[detail.loan.paymentFrequency]}</span>
       </div>
       <div className="table-wrap">
         <table>
@@ -2021,6 +2135,39 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
           </tbody>
         </table>
       </div>
+      {detail.charges.length > 0 && (
+        <div className="loan-charges-section">
+          <h3>Moras aplicadas</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Periodo</th>
+                  <th>Desde</th>
+                  <th>Hasta</th>
+                  <th>Monto</th>
+                  <th>Pagado</th>
+                  <th>Pendiente</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.charges.map((charge) => (
+                  <tr key={charge.id}>
+                    <td>{charge.periodNumber}</td>
+                    <td>{dateOnly(charge.periodStartDate)}</td>
+                    <td>{dateOnly(charge.periodEndDate)}</td>
+                    <td>{money(charge.amount, currencyLabels[detail.loan.currency])}</td>
+                    <td>{money(charge.amountPaid, currencyLabels[detail.loan.currency])}</td>
+                    <td>{money(charge.pendingAmount, currencyLabels[detail.loan.currency])}</td>
+                    <td>{charge.notes ?? "Mora por atraso"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </Panel>
   );
 }

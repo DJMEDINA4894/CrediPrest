@@ -57,6 +57,32 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const fallbackMessage = response.status === 401
+      ? "Tu sesión venció o no tienes permiso para entrar. Inicia sesión nuevamente."
+      : `No se pudo completar la solicitud (${response.status}).`;
+
+    if (contentType.includes("application/json")) {
+      const payload = await response.json().catch(() => null) as { error?: string; title?: string } | null;
+      throw new ApiRequestError(payload?.error ?? payload?.title ?? fallbackMessage, response.status);
+    }
+
+    const text = await response.text().catch(() => "");
+    throw new ApiRequestError(text.trim() || fallbackMessage, response.status);
+  }
+
+  return response.blob();
+}
+
 export const api = {
   login: (userOrEmail: string, password: string) =>
     request<LoginResponse>("/auth/login", {
@@ -84,6 +110,7 @@ export const api = {
   deleteClient: (id: string) => request<void>(`/clients/${id}`, { method: "DELETE" }),
   loans: () => request<Loan[]>("/loans"),
   loanDetail: (id: string) => request<LoanDetail>(`/loans/${id}`),
+  loanAgreement: (id: string) => requestBlob(`/loans/${id}/agreement`),
   createLoan: (payload: unknown) => request<LoanDetail>("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (id: string, payload: unknown) => request<LoanDetail>(`/loans/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   cancelLoan: (id: string) => request<void>(`/loans/${id}/cancel`, { method: "POST" }),

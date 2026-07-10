@@ -9,7 +9,10 @@ namespace CrediPrest.Api.Controllers;
 [ApiController]
 [Authorize(Policy = "BackOffice")]
 [Route("api/[controller]")]
-public sealed class LoansController(ILoanService loanService, IPaymentService paymentService) : ControllerBase
+public sealed class LoansController(
+    ILoanService loanService,
+    IPaymentService paymentService,
+    IWebHostEnvironment environment) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<LoanDto>>> List([FromQuery] string? status, CancellationToken cancellationToken)
@@ -42,6 +45,19 @@ public sealed class LoansController(ILoanService loanService, IPaymentService pa
     {
         await loanService.DeleteAsync(id, cancellationToken);
         return NoContent();
+    }
+
+    [HttpGet("{id:guid}/agreement")]
+    public async Task<IActionResult> Agreement(Guid id, CancellationToken cancellationToken)
+    {
+        var detail = await loanService.GetDetailAsync(id, cancellationToken);
+        var templatePath = Path.Combine(environment.ContentRootPath, "Templates", "ACUERDO DE PRESTAMO.docx");
+        var document = LoanAgreementDocumentBuilder.Build(detail, templatePath);
+
+        return File(
+            document,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            LoanAgreementDocumentBuilder.FileName(detail.Loan));
     }
 
     [HttpGet("{id:guid}/payments")]

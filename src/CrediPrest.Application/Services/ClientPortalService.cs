@@ -15,6 +15,7 @@ internal sealed class ClientPortalService(IApplicationDbContext dbContext, ILoan
             .Include(loan => loan.LenderUser)
             .Include(loan => loan.Installments)
             .Include(loan => loan.Payments)
+            .Include(loan => loan.Charges)
             .Where(loan => loan.ClientId == clientId && loan.Client.IsActive)
             .OrderByDescending(loan => loan.CreatedAtUtc)
             .ToListAsync(cancellationToken);

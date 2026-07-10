@@ -50,6 +50,8 @@ internal sealed class AuthService(
         var activeClients = await dbContext.Clients
             .Include(item => item.Loans)
             .ThenInclude(loan => loan.Installments)
+            .Include(item => item.Loans)
+            .ThenInclude(loan => loan.Charges)
             .Where(item => item.IsActive)
             .ToListAsync(cancellationToken);
         var client = activeClients.FirstOrDefault(
@@ -61,7 +63,10 @@ internal sealed class AuthService(
             throw new UnauthorizedAccessException("No encontramos un cliente activo con esa cédula o teléfono.");
         }
 
-        var hasOpenLoans = client.Loans.Any(loan => loan.Status != LoanStatus.Cancelled && loan.Installments.Any(installment => installment.Status != InstallmentStatus.Paid));
+        var hasOpenLoans = client.Loans.Any(loan =>
+            loan.Status != LoanStatus.Cancelled
+            && (loan.Installments.Any(installment => installment.Status != InstallmentStatus.Paid)
+                || loan.Charges.Any(charge => charge.AmountPaid < charge.Amount)));
         if (!hasOpenLoans)
         {
             throw new UnauthorizedAccessException("No tienes préstamos pendientes para consultar.");

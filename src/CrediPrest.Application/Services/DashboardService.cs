@@ -20,6 +20,7 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             .Include(loan => loan.Client)
             .Include(loan => loan.Installments)
             .Include(loan => loan.Payments)
+            .Include(loan => loan.Charges)
             .Where(loan => loan.Client.IsActive)
             .ToListAsync(cancellationToken);
         var clients = await ApplyClientOwnershipFilter(dbContext.Clients).ToListAsync(cancellationToken);
@@ -46,8 +47,8 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
             TotalLoanedUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => loan.PrincipalAmount),
             TotalRecoveredCordobas: totalRecoveredCordobas,
             TotalRecoveredUsd: totalRecoveredUsd,
-            PendingCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))),
-            PendingUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))),
+            PendingCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(GetPendingAmount),
+            PendingUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(GetPendingAmount),
             EstimatedInterestCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.TotalInterest),
             EstimatedInterestUsd: loans.Where(loan => loan.Currency == CurrencyType.Usd).Sum(loan => loan.TotalInterest),
             ActiveClients: clients.Count(client => client.IsActive),
@@ -69,6 +70,10 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
 
     private static decimal GetAppliedInstallmentAmount(Domain.Entities.Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
+
+    private static decimal GetPendingAmount(Domain.Entities.Loan loan)
+        => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))
+            + loan.Charges.Sum(charge => Math.Max(0, charge.Amount - charge.AmountPaid));
 
     private static decimal SumPaymentsByCurrency(IEnumerable<Domain.Entities.Payment> payments, CurrencyType currency)
         => payments.Where(payment => payment.Loan.Currency == currency).Sum(payment => payment.AmountPaid);

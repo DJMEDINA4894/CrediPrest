@@ -4,11 +4,15 @@ using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace CrediPrest.Application.Services;
 
 internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : ILoanService
 {
+    private static readonly Regex MoneyAmountRegex = new(@"(?<amount>\d+(?:[.,]\d{1,2})?)", RegexOptions.Compiled);
+
     public async Task<IReadOnlyList<LoanDto>> ListAsync(string? status, CancellationToken cancellationToken = default)
     {
         await RefreshOverdueAsync(cancellationToken);
@@ -18,6 +22,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             .Include(loan => loan.LenderUser)
             .Include(loan => loan.Payments)
             .Include(loan => loan.Installments)
+            .Include(loan => loan.Charges)
             .Where(loan => loan.Client.IsActive)
             .AsQueryable();
 
@@ -62,8 +67,10 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             PaymentFrequency = request.PaymentFrequency,
             StartDate = request.StartDate.Date,
             EndDate = GetEndDate(request.StartDate.Date, request.PaymentFrequency, request.TermMonths),
-            ReferenceName = request.ReferenceName?.Trim(),
-            Notes = request.Notes?.Trim()
+            ReferenceName = NormalizeOptional(request.ReferenceName),
+            Notes = NormalizeOptional(request.Notes),
+            AgreementCity = NormalizeOptional(request.AgreementCity),
+            LateFeeDescription = NormalizeOptional(request.LateFeeDescription)
         };
 
         loan.Installments.AddRange(RecalculateLoan(loan));
@@ -80,7 +87,8 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             ValidateLoan(request.PrincipalAmount, request.MonthlyInterestRate, request.TermMonths);
 
             var loan = await LoadLoanForUpdateAsync(id, cancellationToken);
-            if (loan.Payments.Count != 0)
+            var requiresRecalculation = RequiresRecalculation(loan, request);
+            if (loan.Payments.Count != 0 && requiresRecalculation)
             {
                 throw new InvalidOperationException("No se puede recalcular un préstamo que ya tiene pagos registrados.");
             }
@@ -95,12 +103,19 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             loan.StartDate = request.StartDate.Date;
             loan.EndDate = GetEndDate(request.StartDate.Date, request.PaymentFrequency, request.TermMonths);
             loan.Status = request.Status;
-            loan.ReferenceName = request.ReferenceName?.Trim();
-            loan.Notes = request.Notes?.Trim();
+            loan.ReferenceName = NormalizeOptional(request.ReferenceName);
+            loan.Notes = NormalizeOptional(request.Notes);
+            loan.AgreementCity = NormalizeOptional(request.AgreementCity);
+            loan.LateFeeDescription = NormalizeOptional(request.LateFeeDescription);
 
-            await dbContext.DeleteInstallmentsByLoanIdAsync(id, cancellationToken);
+            if (requiresRecalculation)
+            {
+                dbContext.LoanCharges.RemoveRange(loan.Charges);
+                await dbContext.DeleteInstallmentsByLoanIdAsync(id, cancellationToken);
+                loan.Charges.Clear();
+                dbContext.Installments.AddRange(RecalculateLoan(loan));
+            }
 
-            dbContext.Installments.AddRange(RecalculateLoan(loan));
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
@@ -128,6 +143,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
+            .Include(item => item.Charges)
             .FirstOrDefaultAsync(item => item.Id == id && item.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
 
@@ -135,10 +151,12 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
 
         var installmentIds = loan.Installments.Select(installment => installment.Id).ToList();
         var payments = await dbContext.Payments
-            .Where(payment => payment.LoanId == id || installmentIds.Contains(payment.InstallmentId))
+            .Where(payment => payment.LoanId == id
+                || (payment.InstallmentId.HasValue && installmentIds.Contains(payment.InstallmentId.Value)))
             .ToListAsync(cancellationToken);
 
         dbContext.Payments.RemoveRange(payments);
+        dbContext.LoanCharges.RemoveRange(loan.Charges);
         dbContext.Installments.RemoveRange(loan.Installments);
         dbContext.Loans.Remove(loan);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -155,11 +173,14 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
         var loans = await dbContext.Loans
             .Include(loan => loan.Client)
             .Include(loan => loan.Installments)
+            .Include(loan => loan.Charges)
             .Where(loan => loan.Client.IsActive && (loan.Status == LoanStatus.Active || loan.Status == LoanStatus.Overdue))
             .ToListAsync(cancellationToken);
 
         foreach (var loan in loans)
         {
+            ApplyLateFees(loan, today);
+
             foreach (var installment in loan.Installments)
             {
                 if (installment.Status is InstallmentStatus.Paid)
@@ -173,8 +194,9 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             }
 
             var hasOverdue = loan.Installments.Any(installment => installment.Status == InstallmentStatus.Overdue);
-            var isPaid = loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid);
-            loan.Status = isPaid ? LoanStatus.Cancelled : hasOverdue ? LoanStatus.Overdue : LoanStatus.Active;
+            var hasPendingCharges = loan.Charges.Any(charge => charge.AmountPaid < charge.Amount);
+            var isPaid = loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid) && !hasPendingCharges;
+            loan.Status = isPaid ? LoanStatus.Cancelled : hasOverdue || hasPendingCharges ? LoanStatus.Overdue : LoanStatus.Active;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -186,6 +208,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             .Include(loan => loan.LenderUser)
             .Include(loan => loan.Installments)
             .Include(loan => loan.Payments)
+            .Include(loan => loan.Charges)
             .FirstOrDefaultAsync(loan => loan.Id == id && loan.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
 
@@ -194,6 +217,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             .Include(loan => loan.Client)
             .Include(loan => loan.LenderUser)
             .Include(loan => loan.Payments)
+            .Include(loan => loan.Charges)
             .FirstOrDefaultAsync(loan => loan.Id == id && loan.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
 
@@ -289,6 +313,80 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             _ => startDate.Date.AddMonths(installmentNumber)
         };
 
+    private static void ApplyLateFees(Loan loan, DateTime today)
+    {
+        if (!TryReadLateFeeAmount(loan.LateFeeDescription, out var lateFeeAmount))
+        {
+            return;
+        }
+
+        var blockSize = loan.PaymentFrequency switch
+        {
+            PaymentFrequency.Weekly => 4,
+            PaymentFrequency.Biweekly => 2,
+            _ => 1
+        };
+
+        var periods = loan.Installments
+            .OrderBy(installment => installment.InstallmentNumber)
+            .GroupBy(installment => ((installment.InstallmentNumber - 1) / blockSize) + 1);
+
+        foreach (var period in periods)
+        {
+            var installments = period.ToList();
+            var periodStart = installments.Min(installment => installment.DueDate.Date);
+            var periodEnd = loan.PaymentFrequency switch
+            {
+                PaymentFrequency.Weekly => periodStart.AddDays(28),
+                PaymentFrequency.Biweekly => periodStart.AddDays(30),
+                PaymentFrequency.Monthly => periodStart.AddMonths(1),
+                _ => periodStart.AddMonths(1)
+            };
+
+            if (today < periodEnd || installments.All(installment => installment.AmountPaid >= installment.PaymentAmount))
+            {
+                continue;
+            }
+
+            var alreadyApplied = loan.Charges.Any(charge =>
+                charge.Type == LoanChargeType.LateFee && charge.PeriodNumber == period.Key);
+            if (alreadyApplied)
+            {
+                continue;
+            }
+
+            loan.Charges.Add(new LoanCharge
+            {
+                Loan = loan,
+                LoanId = loan.Id,
+                Type = LoanChargeType.LateFee,
+                PeriodNumber = period.Key,
+                PeriodStartDate = periodStart,
+                PeriodEndDate = periodEnd,
+                Amount = lateFeeAmount,
+                Notes = $"Mora por atraso del periodo {period.Key}."
+            });
+        }
+    }
+
+    private static bool TryReadLateFeeAmount(string? value, out decimal amount)
+    {
+        amount = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var match = MoneyAmountRegex.Match(value);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        var normalized = match.Groups["amount"].Value.Replace(',', '.');
+        return decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out amount) && amount > 0;
+    }
+
     private static void ValidateLoan(decimal principalAmount, decimal monthlyInterestRate, int termMonths)
     {
         if (principalAmount <= 0)
@@ -305,5 +403,19 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
         {
             throw new InvalidOperationException("La cantidad de pagos debe ser mayor que cero.");
         }
+    }
+
+    private static bool RequiresRecalculation(Loan loan, UpdateLoanRequest request)
+        => loan.PrincipalAmount != request.PrincipalAmount
+            || loan.Currency != request.Currency
+            || loan.MonthlyInterestRate != request.MonthlyInterestRate
+            || loan.TermMonths != request.TermMonths
+            || loan.PaymentFrequency != request.PaymentFrequency
+            || loan.StartDate.Date != request.StartDate.Date;
+
+    private static string? NormalizeOptional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 }

@@ -5,7 +5,8 @@ namespace CrediPrest.Application.DTOs.Payments;
 public sealed record PaymentDto(
     Guid Id,
     Guid LoanId,
-    Guid InstallmentId,
+    Guid? InstallmentId,
+    Guid? LoanChargeId,
     DateTime PaymentDate,
     decimal AmountPaid,
     PaymentMethod PaymentMethod,

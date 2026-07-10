@@ -13,10 +13,10 @@ internal static class MappingExtensions
         var activeLoans = client.Loans.Count(loan => loan.Status == LoanStatus.Active || loan.Status == LoanStatus.Overdue);
         var pendingCordobas = client.Loans
             .Where(loan => loan.Currency == CurrencyType.Cordoba)
-            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan));
+            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan) + GetPendingChargesAmount(loan));
         var pendingUsd = client.Loans
             .Where(loan => loan.Currency == CurrencyType.Usd)
-            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan));
+            .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan) + GetPendingChargesAmount(loan));
 
         return new ClientDto(
             client.Id,
@@ -56,15 +56,33 @@ internal static class MappingExtensions
             installment.PaidAtUtc,
             installment.AmountPaid);
 
+    public static LoanChargeDto ToDto(this LoanCharge charge)
+        => new(
+            charge.Id,
+            (int)charge.Type,
+            charge.PeriodNumber,
+            charge.PeriodStartDate,
+            charge.PeriodEndDate,
+            charge.Amount,
+            charge.AmountPaid,
+            Math.Max(0, charge.Amount - charge.AmountPaid),
+            charge.Notes);
+
     public static LoanDto ToDto(this Loan loan)
     {
-        var totalPaid = GetAppliedInstallmentAmount(loan);
+        var installmentPaid = GetAppliedInstallmentAmount(loan);
+        var lateFeesTotal = loan.Charges.Sum(charge => charge.Amount);
+        var lateFeesPaid = loan.Charges.Sum(charge => charge.AmountPaid);
+        var lateFeesPending = GetPendingChargesAmount(loan);
+        var totalPaid = installmentPaid + lateFeesPaid;
 
         return new LoanDto(
             loan.Id,
             loan.ClientId,
             loan.Client.FullName,
+            loan.Client.IdentificationNumber,
             loan.LenderUser?.FullName,
+            loan.LenderUser?.IdentificationNumber,
             loan.ReferenceName,
             loan.PrincipalAmount,
             loan.Currency,
@@ -77,12 +95,20 @@ internal static class MappingExtensions
             loan.TotalInterest,
             loan.TotalToPay,
             totalPaid,
-            Math.Max(0, loan.TotalToPay - totalPaid),
-            loan.Notes);
+            lateFeesTotal,
+            lateFeesPaid,
+            lateFeesPending,
+            Math.Max(0, loan.TotalToPay - installmentPaid) + lateFeesPending,
+            loan.Notes,
+            loan.AgreementCity,
+            loan.LateFeeDescription);
     }
 
     private static decimal GetAppliedInstallmentAmount(Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
+
+    private static decimal GetPendingChargesAmount(Loan loan)
+        => loan.Charges.Sum(charge => Math.Max(0, charge.Amount - charge.AmountPaid));
 
     public static LoanDetailDto ToDetailDto(this Loan loan)
         => new(
@@ -90,6 +116,10 @@ internal static class MappingExtensions
             loan.Installments
                 .OrderBy(installment => installment.InstallmentNumber)
                 .Select(installment => installment.ToDto())
+                .ToList(),
+            loan.Charges
+                .OrderBy(charge => charge.PeriodNumber)
+                .Select(charge => charge.ToDto())
                 .ToList());
 
     public static PaymentDto ToDto(this Payment payment)
@@ -97,6 +127,7 @@ internal static class MappingExtensions
             payment.Id,
             payment.LoanId,
             payment.InstallmentId,
+            payment.LoanChargeId,
             payment.PaymentDate,
             payment.AmountPaid,
             payment.PaymentMethod,

@@ -10,6 +10,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<User> Users => Set<User>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Loan> Loans => Set<Loan>();
+    public DbSet<LoanCharge> LoanCharges => Set<LoanCharge>();
     public DbSet<Installment> Installments => Set<Installment>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -88,6 +89,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(loan => loan.TotalInterest).HasPrecision(18, 2);
             entity.Property(loan => loan.TotalToPay).HasPrecision(18, 2);
             entity.Property(loan => loan.Notes).HasMaxLength(1200);
+            entity.Property(loan => loan.AgreementCity).HasMaxLength(120);
+            entity.Property(loan => loan.LateFeeDescription).HasMaxLength(220);
         });
 
         modelBuilder.Entity<Installment>(entity =>
@@ -106,6 +109,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(installment => installment.AmountPaid).HasPrecision(18, 2);
         });
 
+        modelBuilder.Entity<LoanCharge>(entity =>
+        {
+            entity.ToTable("LoanCharges");
+            entity.HasKey(charge => charge.Id);
+            entity.HasOne(charge => charge.Loan)
+                .WithMany(loan => loan.Charges)
+                .HasForeignKey(charge => charge.LoanId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(charge => new { charge.LoanId, charge.Type, charge.PeriodNumber }).IsUnique();
+            entity.Property(charge => charge.Amount).HasPrecision(18, 2);
+            entity.Property(charge => charge.AmountPaid).HasPrecision(18, 2);
+            entity.Property(charge => charge.Notes).HasMaxLength(320);
+        });
+
         modelBuilder.Entity<Payment>(entity =>
         {
             entity.ToTable("Payments");
@@ -117,6 +134,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasOne(payment => payment.Installment)
                 .WithMany(installment => installment.Payments)
                 .HasForeignKey(payment => payment.InstallmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(payment => payment.LoanCharge)
+                .WithMany(charge => charge.Payments)
+                .HasForeignKey(payment => payment.LoanChargeId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(payment => payment.AmountPaid).HasPrecision(18, 2);
             entity.Property(payment => payment.ReferenceNumber).HasMaxLength(120);

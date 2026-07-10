@@ -28,6 +28,8 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
             .ThenInclude(loan => loan.Payments)
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Installments)
+            .Include(client => client.Loans)
+            .ThenInclude(loan => loan.Charges)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -145,9 +147,15 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
                 .ToListAsync(cancellationToken);
 
             var payments = await dbContext.Payments
-                .Where(payment => loanIds.Contains(payment.LoanId) || installmentIds.Contains(payment.InstallmentId))
+                .Where(payment => loanIds.Contains(payment.LoanId)
+                    || (payment.InstallmentId.HasValue && installmentIds.Contains(payment.InstallmentId.Value)))
                 .ToListAsync(cancellationToken);
             dbContext.Payments.RemoveRange(payments);
+
+            var charges = await dbContext.LoanCharges
+                .Where(charge => loanIds.Contains(charge.LoanId))
+                .ToListAsync(cancellationToken);
+            dbContext.LoanCharges.RemoveRange(charges);
 
             var installments = await dbContext.Installments
                 .Where(installment => loanIds.Contains(installment.LoanId))
@@ -170,6 +178,8 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
             .ThenInclude(loan => loan.Payments)
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Installments)
+            .Include(client => client.Loans)
+            .ThenInclude(loan => loan.Charges)
             .FirstOrDefaultAsync(client => client.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Cliente no encontrado.");
 

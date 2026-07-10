@@ -19,9 +19,12 @@ public sealed class Loan
     public DateTime EndDate { get; set; }
     public LoanStatus Status { get; set; } = LoanStatus.Active;
     public string? Notes { get; set; }
+    public string? AgreementCity { get; set; }
+    public string? LateFeeDescription { get; set; }
     public decimal TotalInterest { get; set; }
     public decimal TotalToPay { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<Installment> Installments { get; set; } = [];
     public List<Payment> Payments { get; set; } = [];
+    public List<LoanCharge> Charges { get; set; } = [];
 }
