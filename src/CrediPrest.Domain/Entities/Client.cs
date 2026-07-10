@@ -3,6 +3,8 @@ namespace CrediPrest.Domain.Entities;
 public sealed class Client
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? LenderUserId { get; set; }
+    public User? LenderUser { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string IdentificationNumber { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;

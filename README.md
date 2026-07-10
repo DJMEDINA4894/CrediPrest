@@ -23,13 +23,14 @@ web/                          Frontend React
 
 ## Credenciales iniciales
 
-El seed crea un usuario administrador al iniciar la API si no existe ningún usuario:
+La app no incluye usuario ni contraseña por defecto. Si necesitas crear un administrador automaticamente en una base vacia, configura estos valores como user-secrets o variables de entorno privadas:
 
-- Usuario: `admin`
-- Correo: `admin@crediprest.local`
-- Contraseña: `Admin123*`
+- `AdminSeed__UserName`
+- `AdminSeed__Email`
+- `AdminSeed__FullName`
+- `AdminSeed__Password`
 
-Cambia la contraseña y el `Jwt:SecretKey` antes de usarlo fuera de desarrollo.
+No publiques esas credenciales en el repositorio. Cambia tambien el `Jwt__SecretKey` antes de usar la app fuera de desarrollo.
 
 ## Base de datos
 

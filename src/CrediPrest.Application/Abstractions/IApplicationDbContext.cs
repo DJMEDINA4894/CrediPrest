@@ -10,6 +10,7 @@ public interface IApplicationDbContext
     DbSet<Loan> Loans { get; }
     DbSet<Installment> Installments { get; }
     DbSet<Payment> Payments { get; }
+    DbSet<Notification> Notifications { get; }
     DbSet<LoanStatusCatalog> LoanStatuses { get; }
     DbSet<PaymentMethodCatalog> PaymentMethods { get; }
     Task<int> DeleteInstallmentsByLoanIdAsync(Guid loanId, CancellationToken cancellationToken = default);

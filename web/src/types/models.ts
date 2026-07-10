@@ -10,6 +10,8 @@ export interface LoginResponse {
   userName: string;
   email: string;
   fullName: string;
+  role: "Admin" | "Lender" | "Client";
+  clientId?: string;
 }
 
 export interface Client {
@@ -41,6 +43,7 @@ export interface Loan {
   id: string;
   clientId: string;
   clientName: string;
+  lenderName?: string;
   referenceName?: string;
   principalAmount: number;
   currency: CurrencyType;
@@ -110,4 +113,26 @@ export interface Dashboard {
   paidTodayCount: number;
   paidThisWeekCount: number;
   paidThisMonthCount: number;
+}
+
+export interface Notification {
+  id: string;
+  type: 1 | 2;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAtUtc: string;
+  relatedEntityId: string;
+}
+
+export interface AppUser {
+  id: string;
+  clientId?: string;
+  userName: string;
+  email: string;
+  fullName: string;
+  phone?: string;
+  identificationNumber?: string;
+  role: 1 | 2 | 3;
+  isActive: boolean;
 }

@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class ClientService(IApplicationDbContext dbContext) : IClientService
+internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : IClientService
 {
     private static readonly Regex IdentificationRegex = new(@"^\d{3}-?\d{6}-?\d{4}[A-Za-z]$", RegexOptions.Compiled);
     private static readonly Regex PhoneRegex = new(@"^\+?\d{8,15}$", RegexOptions.Compiled);
@@ -23,7 +23,7 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
 
     public async Task<IReadOnlyList<ClientDto>> SearchAsync(string? search, CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Clients
+        var query = ApplyOwnershipFilter(dbContext.Clients)
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Payments)
             .Include(client => client.Loans)
@@ -60,12 +60,14 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
     {
         Validate(request);
         await EnsureIdentificationIsUniqueAsync(request.IdentificationNumber, excludedClientId: null, cancellationToken);
+        await EnsurePhoneIsUniqueAsync(request.Phone, excludedClientId: null, cancellationToken);
 
         var client = new Domain.Entities.Client
         {
             FullName = request.FullName.Trim(),
             IdentificationNumber = request.IdentificationNumber.Trim(),
             Phone = request.Phone.Trim(),
+            LenderUserId = currentUser.IsLender ? currentUser.UserId : null,
             Address = request.Address.Trim(),
             Email = request.Email?.Trim(),
             PersonalReference1 = request.PersonalReference1?.Trim(),
@@ -91,6 +93,7 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
     {
         Validate(request);
         await EnsureIdentificationIsUniqueAsync(request.IdentificationNumber, excludedClientId: id, cancellationToken);
+        await EnsurePhoneIsUniqueAsync(request.Phone, excludedClientId: id, cancellationToken);
 
         var client = await LoadClientAsync(id, cancellationToken);
         client.FullName = request.FullName.Trim();
@@ -125,7 +128,7 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var client = await dbContext.Clients
+        var client = await ApplyOwnershipFilter(dbContext.Clients)
             .FirstOrDefaultAsync(client => client.Id == id, cancellationToken)
             ?? throw new KeyNotFoundException("Cliente no encontrado.");
 
@@ -162,7 +165,7 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
     }
 
     private async Task<Domain.Entities.Client> LoadClientAsync(Guid id, CancellationToken cancellationToken)
-        => await dbContext.Clients
+        => await ApplyOwnershipFilter(dbContext.Clients)
             .Include(client => client.Loans)
             .ThenInclude(loan => loan.Payments)
             .Include(client => client.Loans)
@@ -182,6 +185,34 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
         {
             throw new InvalidOperationException("Ya existe un cliente registrado con esa cédula.");
         }
+    }
+
+    private async Task EnsurePhoneIsUniqueAsync(string phone, Guid? excludedClientId, CancellationToken cancellationToken)
+    {
+        var normalizedPhone = NormalizePhone(phone);
+        var exists = await dbContext.Clients.AnyAsync(
+            client => (!excludedClientId.HasValue || client.Id != excludedClientId.Value)
+                && client.Phone
+                    .Replace(" ", string.Empty)
+                    .Replace("-", string.Empty)
+                    .Replace("(", string.Empty)
+                    .Replace(")", string.Empty) == normalizedPhone,
+            cancellationToken);
+
+        if (exists)
+        {
+            throw new InvalidOperationException("Ya existe un cliente registrado con ese teléfono.");
+        }
+    }
+
+    private IQueryable<Domain.Entities.Client> ApplyOwnershipFilter(IQueryable<Domain.Entities.Client> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
     }
 
     private static void Validate(CreateClientRequest request)
@@ -321,6 +352,13 @@ internal sealed class ClientService(IApplicationDbContext dbContext) : IClientSe
 
     private static string NormalizeIdentification(string identificationNumber)
         => identificationNumber.Trim().Replace("-", string.Empty).ToUpperInvariant();
+
+    private static string NormalizePhone(string phone)
+        => phone.Trim()
+            .Replace(" ", string.Empty)
+            .Replace("-", string.Empty)
+            .Replace("(", string.Empty)
+            .Replace(")", string.Empty);
 
     private static string NormalizePaymentMethod(string? paymentMethod)
         => string.IsNullOrWhiteSpace(paymentMethod)

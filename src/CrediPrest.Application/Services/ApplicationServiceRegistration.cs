@@ -11,6 +11,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ILoanService, LoanService>();
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IClientPortalService, ClientPortalService>();
+        services.AddScoped<IUserService, UserService>();
 
         return services;
     }

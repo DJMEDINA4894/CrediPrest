@@ -64,6 +64,7 @@ internal static class MappingExtensions
             loan.Id,
             loan.ClientId,
             loan.Client.FullName,
+            loan.LenderUser?.FullName,
             loan.ReferenceName,
             loan.PrincipalAmount,
             loan.Currency,

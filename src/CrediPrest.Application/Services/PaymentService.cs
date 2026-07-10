@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanService loanService) : IPaymentService
+internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanService loanService, ICurrentUserContext currentUser) : IPaymentService
 {
     public async Task<LoanDetailDto> RegisterAsync(RegisterPaymentRequest request, CancellationToken cancellationToken = default)
     {
@@ -16,7 +16,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El monto pagado debe ser mayor que cero.");
         }
 
-        var loan = await dbContext.Loans
+        var loan = await ApplyOwnershipFilter(dbContext.Loans)
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
@@ -76,7 +76,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         await dbContext.SaveChangesAsync(cancellationToken);
         await loanService.RefreshOverdueAsync(cancellationToken);
 
-        var updatedLoan = await dbContext.Loans
+        var updatedLoan = await ApplyOwnershipFilter(dbContext.Loans)
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
@@ -87,10 +87,17 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
     public async Task<IReadOnlyList<PaymentDto>> ListByLoanAsync(Guid loanId, CancellationToken cancellationToken = default)
     {
-        var payments = await dbContext.Payments
+        var paymentsQuery = dbContext.Payments
             .Include(payment => payment.Loan)
             .Where(payment => payment.LoanId == loanId)
-            .Where(payment => payment.Loan.Client.IsActive)
+            .Where(payment => payment.Loan.Client.IsActive);
+
+        if (currentUser.IsLender && currentUser.UserId.HasValue)
+        {
+            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
+        }
+
+        var payments = await paymentsQuery
             .OrderByDescending(payment => payment.PaymentDate)
             .ThenByDescending(payment => payment.CreatedAtUtc)
             .ToListAsync(cancellationToken);
@@ -131,5 +138,15 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .OrderBy(installment => installment.InstallmentNumber <= selectedInstallment.InstallmentNumber ? 0 : 1)
             .ThenBy(installment => installment.InstallmentNumber)
             .ToList();
+    }
+
+    private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
     }
 }

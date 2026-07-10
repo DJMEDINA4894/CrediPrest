@@ -4,6 +4,7 @@ using CrediPrest.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace CrediPrest.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260709030327_AddRolesAndNotifications")]
+    partial class AddRolesAndNotifications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,9 +72,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("nvarchar(80)");
 
-                    b.Property<Guid?>("LenderUserId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("Notes")
                         .HasMaxLength(1200)
                         .HasColumnType("nvarchar(1200)");
@@ -111,8 +111,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("IdentificationNumber")
                         .IsUnique();
-
-                    b.HasIndex("LenderUserId");
 
                     b.ToTable("Clients", (string)null);
                 });
@@ -184,9 +182,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("EndDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("LenderUserId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<decimal>("MonthlyInterestRate")
                         .HasPrecision(9, 4)
                         .HasColumnType("decimal(9,4)");
@@ -226,8 +221,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ClientId");
-
-                    b.HasIndex("LenderUserId");
 
                     b.ToTable("Loans", (string)null);
                 });
@@ -413,10 +406,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
-                    b.Property<string>("IdentificationNumber")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -424,10 +413,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
-
-                    b.Property<string>("Phone")
-                        .HasMaxLength(40)
-                        .HasColumnType("nvarchar(40)");
 
                     b.Property<int>("Role")
                         .ValueGeneratedOnAdd()
@@ -452,16 +437,6 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
-            modelBuilder.Entity("CrediPrest.Domain.Entities.Client", b =>
-                {
-                    b.HasOne("CrediPrest.Domain.Entities.User", "LenderUser")
-                        .WithMany()
-                        .HasForeignKey("LenderUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("LenderUser");
-                });
-
             modelBuilder.Entity("CrediPrest.Domain.Entities.Installment", b =>
                 {
                     b.HasOne("CrediPrest.Domain.Entities.Loan", "Loan")
@@ -481,14 +456,7 @@ namespace CrediPrest.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("CrediPrest.Domain.Entities.User", "LenderUser")
-                        .WithMany()
-                        .HasForeignKey("LenderUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Client");
-
-                    b.Navigation("LenderUser");
                 });
 
             modelBuilder.Entity("CrediPrest.Domain.Entities.Notification", b =>

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanService loanService) : IDashboardService
+internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanService loanService, ICurrentUserContext currentUser) : IDashboardService
 {
     public async Task<DashboardDto> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -16,19 +16,23 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var monthEnd = monthStart.AddMonths(1);
 
-        var loans = await dbContext.Loans
+        var loans = await ApplyLoanOwnershipFilter(dbContext.Loans)
             .Include(loan => loan.Client)
             .Include(loan => loan.Installments)
             .Include(loan => loan.Payments)
             .Where(loan => loan.Client.IsActive)
             .ToListAsync(cancellationToken);
-        var clients = await dbContext.Clients.ToListAsync(cancellationToken);
+        var clients = await ApplyClientOwnershipFilter(dbContext.Clients).ToListAsync(cancellationToken);
         var payments = await dbContext.Payments
             .Include(payment => payment.Installment)
             .Include(payment => payment.Loan)
             .ThenInclude(loan => loan.Client)
             .Where(payment => payment.Loan.Client.IsActive)
             .ToListAsync(cancellationToken);
+        if (currentUser.IsLender && currentUser.UserId.HasValue)
+        {
+            payments = payments.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value).ToList();
+        }
 
         var todayPayments = payments.Where(payment => payment.PaymentDate.Date == today).ToList();
         var weekPayments = payments.Where(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today).ToList();
@@ -68,4 +72,24 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
 
     private static decimal SumPaymentsByCurrency(IEnumerable<Domain.Entities.Payment> payments, CurrencyType currency)
         => payments.Where(payment => payment.Loan.Currency == currency).Sum(payment => payment.AmountPaid);
+
+    private IQueryable<Domain.Entities.Loan> ApplyLoanOwnershipFilter(IQueryable<Domain.Entities.Loan> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+    }
+
+    private IQueryable<Domain.Entities.Client> ApplyClientOwnershipFilter(IQueryable<Domain.Entities.Client> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+    }
 }

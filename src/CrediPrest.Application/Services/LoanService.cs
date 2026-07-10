@@ -7,14 +7,15 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanService
+internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : ILoanService
 {
     public async Task<IReadOnlyList<LoanDto>> ListAsync(string? status, CancellationToken cancellationToken = default)
     {
         await RefreshOverdueAsync(cancellationToken);
 
-        var query = dbContext.Loans
+        var query = ApplyOwnershipFilter(dbContext.Loans)
             .Include(loan => loan.Client)
+            .Include(loan => loan.LenderUser)
             .Include(loan => loan.Payments)
             .Include(loan => loan.Installments)
             .Where(loan => loan.Client.IsActive)
@@ -42,11 +43,10 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
     {
         ValidateLoan(request.PrincipalAmount, request.MonthlyInterestRate, request.TermMonths);
 
-        var clientExists = await dbContext.Clients.AnyAsync(
-            client => client.Id == request.ClientId && client.IsActive,
-            cancellationToken);
+        var client = await ApplyClientOwnershipFilter(dbContext.Clients)
+            .FirstOrDefaultAsync(client => client.Id == request.ClientId && client.IsActive, cancellationToken);
 
-        if (!clientExists)
+        if (client is null)
         {
             throw new KeyNotFoundException("Cliente activo no encontrado.");
         }
@@ -54,6 +54,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
         var loan = new Loan
         {
             ClientId = request.ClientId,
+            LenderUserId = currentUser.IsLender ? currentUser.UserId : client.LenderUserId,
             PrincipalAmount = request.PrincipalAmount,
             Currency = request.Currency,
             MonthlyInterestRate = request.MonthlyInterestRate,
@@ -123,7 +124,7 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var loan = await dbContext.Loans
+        var loan = await ApplyOwnershipFilter(dbContext.Loans)
             .Include(item => item.Client)
             .Include(item => item.Installments)
             .Include(item => item.Payments)
@@ -180,16 +181,18 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
     }
 
     private async Task<Loan> LoadLoanAsync(Guid id, CancellationToken cancellationToken)
-        => await dbContext.Loans
+        => await ApplyOwnershipFilter(dbContext.Loans)
             .Include(loan => loan.Client)
+            .Include(loan => loan.LenderUser)
             .Include(loan => loan.Installments)
             .Include(loan => loan.Payments)
             .FirstOrDefaultAsync(loan => loan.Id == id && loan.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
 
     private async Task<Loan> LoadLoanForUpdateAsync(Guid id, CancellationToken cancellationToken)
-        => await dbContext.Loans
+        => await ApplyOwnershipFilter(dbContext.Loans)
             .Include(loan => loan.Client)
+            .Include(loan => loan.LenderUser)
             .Include(loan => loan.Payments)
             .FirstOrDefaultAsync(loan => loan.Id == id && loan.Client.IsActive, cancellationToken)
             ?? throw new KeyNotFoundException("Préstamo no encontrado.");
@@ -198,6 +201,26 @@ internal sealed class LoanService(IApplicationDbContext dbContext) : ILoanServic
         => dbContext is DbContext efContext
             ? await efContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
+
+    private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+    }
+
+    private IQueryable<Domain.Entities.Client> ApplyClientOwnershipFilter(IQueryable<Domain.Entities.Client> query)
+    {
+        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        {
+            return query;
+        }
+
+        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+    }
 
     private static IReadOnlyList<Installment> RecalculateLoan(Loan loan)
     {

@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { api, clearToken, getToken, setToken } from "./api/client";
-import type { Client, Dashboard, Installment, Loan, LoanDetail, LoginResponse } from "./types/models";
+import { ApiRequestError, api, clearToken, getToken, setToken } from "./api/client";
+import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoginResponse, Notification } from "./types/models";
 
-type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "settings";
+type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "users" | "settings" | "clientPortal";
 type ConfirmDialogState = {
   title: string;
   message: string;
@@ -48,6 +48,8 @@ const clientFieldHints: Record<string, string> = {
   referencePhone1: "El teléfono de referencia 1 debe tener de 8 a 15 dígitos.",
   paymentAccount: "Las cuentas bancarias deben tener solo números de 6 a 24 dígitos. Kash debe tener de 3 a 80 caracteres."
 };
+const APP_FONT_SIZE_KEY = "crediprest.fontSize";
+const DEFAULT_APP_FONT_SIZE = 16;
 
 const emptyDashboard: Dashboard = {
   totalLoanedCordobas: 0,
@@ -180,7 +182,7 @@ function buildPaymentTablePdf(detail: LoanDetail) {
     { title: "Cuota", width: 90, max: 18 },
     { title: "Pagado", width: 90, max: 18 },
     { title: "Pendiente", width: 95, max: 18 },
-    { title: "Saldo", width: 90, max: 18 },
+    { title: "Debe", width: 90, max: 18 },
     { title: "Estado", width: 85, max: 16 }
   ];
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -211,6 +213,10 @@ function buildPaymentTablePdf(detail: LoanDetail) {
     lines.push(pdfText(margin, y, `Cliente: ${detail.loan.clientName}`, 10, "F2"));
     lines.push(pdfText(360, y, `Frecuencia: ${frequencyLabels[detail.loan.paymentFrequency]}`, 10));
     y -= 16;
+    if (detail.loan.lenderName) {
+      lines.push(pdfText(margin, y, `Prestamista: ${detail.loan.lenderName}`, 9));
+      y -= 16;
+    }
     if (detail.loan.referenceName) {
       lines.push(pdfText(margin, y, `Referencia: ${detail.loan.referenceName}`, 9));
       y -= 16;
@@ -219,7 +225,7 @@ function buildPaymentTablePdf(detail: LoanDetail) {
     lines.push(pdfText(190, y, `Interes mensual: ${detail.loan.monthlyInterestRate}%`, 9));
     lines.push(pdfText(360, y, `Total: ${money(detail.loan.totalToPay, currency)}`, 9));
     lines.push(pdfText(520, y, `Pagado: ${money(detail.loan.totalPaid, currency)}`, 9));
-    lines.push(pdfText(670, y, `Saldo: ${money(detail.loan.pendingBalance, currency)}`, 9));
+    lines.push(pdfText(670, y, `Debe: ${money(detail.loan.pendingBalance, currency)}`, 9));
     y -= 22;
 
     const tableLeft = margin;
@@ -306,8 +312,55 @@ function formValue(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
+function savedAppFontSize() {
+  const value = Number(localStorage.getItem(APP_FONT_SIZE_KEY));
+  return Number.isFinite(value) && value >= 14 && value <= 20 ? value : DEFAULT_APP_FONT_SIZE;
+}
+
 function numberValue(form: FormData, key: string) {
   return Number(form.get(key) ?? 0);
+}
+
+function GmailBrandIcon() {
+  return (
+    <svg viewBox="0 0 48 36" aria-hidden="true" focusable="false">
+      <path d="M4 4h40v28H4z" fill="#fff" />
+      <path d="M4 8.5 24 23 44 8.5V4L24 18.5 4 4z" fill="#ea4335" />
+      <path d="M4 8.5V32h7V13.6z" fill="#4285f4" />
+      <path d="M44 8.5V32h-7V13.6z" fill="#34a853" />
+      <path d="M11 13.6 4 8.5V4l7 5.1z" fill="#c5221f" />
+      <path d="M37 13.6 44 8.5V4l-7 5.1z" fill="#fbbc04" />
+    </svg>
+  );
+}
+
+function ClaroBrandIcon() {
+  return (
+    <svg viewBox="0 0 76 34" aria-hidden="true" focusable="false">
+      <rect width="76" height="34" rx="8" fill="#da291c" />
+      <text x="38" y="22" textAnchor="middle" fill="#fff" fontFamily="Arial, Helvetica, sans-serif" fontSize="18" fontWeight="800">Claro</text>
+      <path d="M56 7l5-4M60 11l7-1M56 15l5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TigoBrandIcon() {
+  return (
+    <svg viewBox="0 0 76 34" aria-hidden="true" focusable="false">
+      <rect width="76" height="34" rx="8" fill="#003da6" />
+      <text x="38" y="23" textAnchor="middle" fill="#fff" fontFamily="Arial, Helvetica, sans-serif" fontSize="20" fontWeight="800">tigo</text>
+    </svg>
+  );
+}
+
+function EyeIcon({ crossed }: { crossed: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      {crossed && <path d="M4 4l16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />}
+    </svg>
+  );
 }
 
 function paymentAccountValue(client: Client | null) {
@@ -394,15 +447,22 @@ function getClientFormError(form: HTMLFormElement) {
 export default function App() {
   const [tokenAvailable, setTokenAvailable] = useState(Boolean(getToken()));
   const [session, setSession] = useState<LoginResponse | null>(null);
+  const [loginMode, setLoginMode] = useState<"staff" | "client">("staff");
+  const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard>(emptyDashboard);
   const [clients, setClients] = useState<Client[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanDetail, setLoanDetail] = useState<LoanDetail | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [clientPlans, setClientPlans] = useState<LoanDetail[]>([]);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [newLoanClientId, setNewLoanClientId] = useState("");
   const [clientSearch, setClientSearch] = useState("");
+  const [appFontSize, setAppFontSize] = useState(savedAppFontSize);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -411,23 +471,44 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const [dashboardData, clientData, loanData] = await Promise.all([
-        api.dashboard(),
-        api.clients(search),
-        api.loans()
-      ]);
-      setDashboard(dashboardData);
-      setClients(clientData);
-      setLoans(loanData);
-      if (loanDetail) {
-        if (loanData.some((loan) => loan.id === loanDetail.loan.id)) {
-          setLoanDetail(await api.loanDetail(loanDetail.loan.id));
-        } else {
-          setLoanDetail(null);
+      if (session?.role === "Client") {
+        const [notificationData, planData] = await Promise.all([
+          api.notifications(),
+          api.clientPaymentPlans()
+        ]);
+        setNotifications(notificationData);
+        setClientPlans(planData);
+        setClients([]);
+        setLoans([]);
+        setDashboard(emptyDashboard);
+      } else {
+        const [dashboardData, clientData, loanData, notificationData, userData] = await Promise.all([
+          api.dashboard(),
+          api.clients(search),
+          api.loans(),
+          api.notifications(),
+          session?.role === "Admin" ? api.users() : Promise.resolve([] as AppUser[])
+        ]);
+        setDashboard(dashboardData);
+        setClients(clientData);
+        setLoans(loanData);
+        setNotifications(notificationData);
+        setUsers(userData);
+        if (loanDetail) {
+          if (loanData.some((loan) => loan.id === loanDetail.loan.id)) {
+            setLoanDetail(await api.loanDetail(loanDetail.loan.id));
+          } else {
+            setLoanDetail(null);
+          }
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado");
+      if (err instanceof ApiRequestError && err.statusCode === 401) {
+        logout();
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "No se pudo actualizar la información.");
+      }
     } finally {
       setLoading(false);
     }
@@ -437,7 +518,12 @@ export default function App() {
     if (tokenAvailable) {
       refresh();
     }
-  }, [tokenAvailable]);
+  }, [tokenAvailable, session?.role]);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${appFontSize}px`;
+    localStorage.setItem(APP_FONT_SIZE_KEY, String(appFontSize));
+  }, [appFontSize]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -446,14 +532,17 @@ export default function App() {
     const form = new FormData(event.currentTarget);
 
     try {
-      const response = await api.login(formValue(form, "user"), formValue(form, "password"));
+      const response = loginMode === "client"
+        ? await api.clientLogin(formValue(form, "clientAccessKey"))
+        : await api.login(formValue(form, "accessUser"), formValue(form, "accessCode"));
       setToken(response.token);
       setSession(response);
       setTokenAvailable(true);
-      setView("dashboard");
+      setView(response.role === "Client" ? "clientPortal" : "dashboard");
       setLoanDetail(null);
       setEditingClient(null);
       setEditingLoan(null);
+      setEditingUser(null);
       setNewLoanClientId("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo iniciar sesión");
@@ -470,8 +559,12 @@ export default function App() {
     setClients([]);
     setLoans([]);
     setLoanDetail(null);
+    setNotifications([]);
+    setClientPlans([]);
+    setUsers([]);
     setEditingClient(null);
     setEditingLoan(null);
+    setEditingUser(null);
     setNewLoanClientId("");
     setClientSearch("");
     setView("dashboard");
@@ -698,6 +791,116 @@ export default function App() {
     }
   }
 
+  async function submitUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const password = formValue(form, "lenderAccessCode");
+    const confirmPassword = formValue(form, "lenderAccessConfirm");
+
+    if (password !== confirmPassword) {
+      setError("La contraseña y la confirmación no coinciden.");
+      return;
+    }
+
+    if (password && password.length <= 8) {
+      setError("La contraseña debe tener más de 8 caracteres.");
+      return;
+    }
+
+    const payload = {
+      clientId: null,
+      userName: formValue(form, "lenderAlias"),
+      email: formValue(form, "email"),
+      fullName: formValue(form, "fullName"),
+      phone: formValue(form, "phone"),
+      identificationNumber: formValue(form, "identificationNumber"),
+      password,
+      confirmPassword,
+      role: 2,
+      isActive: editingUser?.isActive ?? true
+    };
+
+    try {
+      setLoading(true);
+      setError(null);
+      if (editingUser) {
+        await api.updateUser(editingUser.id, {
+          clientId: payload.clientId,
+          email: payload.email,
+          fullName: payload.fullName,
+          phone: payload.phone,
+          identificationNumber: payload.identificationNumber,
+          password: password || null,
+          confirmPassword: password ? confirmPassword : null,
+          role: 2,
+          isActive: payload.isActive
+        });
+      } else {
+        await api.createUser(payload);
+      }
+      setEditingUser(null);
+      formElement.reset();
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo guardar el usuario");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function setUserActive(user: AppUser, isActive: boolean) {
+    try {
+      setLoading(true);
+      setError(null);
+      await api.updateUser(user.id, {
+        clientId: null,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone ?? null,
+        identificationNumber: user.identificationNumber ?? null,
+        password: null,
+        confirmPassword: null,
+        role: 2,
+        isActive
+      });
+      if (editingUser?.id === user.id) {
+        setEditingUser({ ...user, isActive });
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo actualizar el usuario");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteUser(user: AppUser) {
+    setConfirmDialog({
+      title: "Eliminar usuario",
+      message: `Eliminar ${user.fullName} quitará su acceso. Si tiene datos asociados, se desactivará para conservar el historial.`,
+      confirmLabel: "Eliminar usuario",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          setLoading(true);
+          setError(null);
+          await api.deleteUser(user.id);
+          if (editingUser?.id === user.id) {
+            setEditingUser(null);
+          }
+          await refresh();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "No se pudo eliminar el usuario");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  }
+
   async function openLoan(id: string, nextView: View | null = "loans") {
     setLoading(true);
     try {
@@ -710,6 +913,15 @@ export default function App() {
       setError(err instanceof Error ? err.message : "No se pudo abrir el préstamo");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function markNotificationRead(id: string) {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((items) => items.map((item) => item.id === id ? { ...item, isRead: true } : item));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo actualizar la notificación");
     }
   }
 
@@ -726,28 +938,126 @@ export default function App() {
   const overdueLoans = useMemo(() => loans.filter((loan) => loan.status === 3), [loans]);
   const activeLoans = useMemo(() => loans.filter((loan) => loan.status === 1), [loans]);
   const activeClients = useMemo(() => clients.filter((client) => client.isActive), [clients]);
+  const navigationItems: View[] = session?.role === "Client"
+    ? ["clientPortal"]
+    : session?.role === "Admin"
+      ? ["dashboard", "clients", "loans", "payments", "reports", "users", "settings"]
+      : ["dashboard", "clients", "loans", "payments", "reports"];
 
   if (!tokenAvailable) {
     return (
       <main className="login-shell">
         <section className="login-panel">
-          <div>
-            <span className="eyebrow">MVP privado</span>
-            <h1>CrediPrestApp</h1>
+          <div className="login-copy">
+            <span className="eyebrow">Gestión financiera</span>
+            <h1>CrediPrest</h1>
             <p>Control de clientes, préstamos, cuotas, pagos e intereses en córdobas y dólares.</p>
+            <div className="login-info-stack">
+              <div className="login-info-card">
+                <strong>Acceso para prestamistas</strong>
+                <span>Solicita tu usuario directamente al administrador. Las cuentas se crean y activan solo después de revisión.</span>
+              </div>
+              <div className="login-info-card">
+                <strong>Privacidad y seguridad</strong>
+                <span>Cada cliente solo puede consultar sus propios préstamos. La información se protege con acceso autenticado, roles y trazabilidad.</span>
+              </div>
+            </div>
           </div>
-          <form onSubmit={handleLogin} className="login-form">
-            <label>
-              Usuario o correo
-              <input name="user" autoComplete="username" defaultValue="admin" required />
-            </label>
-            <label>
-              Contraseña
-              <input name="password" type="password" autoComplete="current-password" defaultValue="Admin123*" required />
-            </label>
+          <form onSubmit={handleLogin} className="login-form" autoComplete="off">
+            {loginMode === "staff" ? (
+              <>
+                <label>
+                  Usuario o correo
+                  <input name="accessUser" autoComplete="off" spellCheck={false} required />
+                </label>
+                <label>
+                  Contraseña
+                  <div className="password-field">
+                    <input name="accessCode" type={showAccessPassword ? "text" : "password"} autoComplete="new-password" required />
+                    <button
+                      type="button"
+                      className="password-toggle"
+                      aria-label={showAccessPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                      title={showAccessPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                      onClick={() => setShowAccessPassword((value) => !value)}
+                    >
+                      <EyeIcon crossed={showAccessPassword} />
+                    </button>
+                  </div>
+                </label>
+              </>
+            ) : (
+              <>
+                <div className="login-context">
+                  <strong>Consulta de plan de pago</strong>
+                  <span>Ingresa tu cédula o teléfono registrado.</span>
+                </div>
+                <label>
+                  Cédula o teléfono
+                  <input name="clientAccessKey" autoComplete="off" placeholder="001-010101-0001A o 88888888" required />
+                </label>
+              </>
+            )}
             {error && <p className="alert">{error}</p>}
-            <button type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
+            <button type="submit" disabled={loading}>
+              {loading ? "Procesando..." : loginMode === "client" ? "Consultar plan" : "Entrar"}
+            </button>
+            <div className="login-link-row">
+              {loginMode !== "staff" && (
+                <button
+                  type="button"
+                  className="login-secondary-action"
+                  onClick={() => {
+                    setError(null);
+                    setLoginMode("staff");
+                  }}
+                >
+                  Volver al acceso principal
+                </button>
+              )}
+              {loginMode !== "client" && (
+                <button
+                  type="button"
+                  className="login-secondary-action"
+                  onClick={() => {
+                    setError(null);
+                    setLoginMode("client");
+                  }}
+                >
+                  Consultar mi plan de pago
+                </button>
+              )}
+            </div>
+            <p className="login-contact-note">
+              ¿Necesitas acceso como prestamista? Ponte en contacto con el administrador para validar tus datos y activar tu usuario.
+            </p>
           </form>
+          <div className="login-contact-strip">
+            <strong>Contacto directo</strong>
+            <div className="contact-grid">
+              <a href="mailto:denisjmedinac4894@gmail.com" className="contact-link">
+                <span className="contact-brand-icon gmail-brand"><GmailBrandIcon /></span>
+                <span>
+                  <small>Correo Gmail</small>
+                  denisjmedinac4894@gmail.com
+                </span>
+              </a>
+              <a href="https://wa.me/50558210655" className="contact-link" target="_blank" rel="noreferrer">
+                <span className="contact-brand-icon claro-brand"><ClaroBrandIcon /></span>
+                <span>
+                  <small>WhatsApp / Claro</small>
+                  58210655
+                </span>
+              </a>
+              <a href="tel:+50584517258" className="contact-link">
+                <span className="contact-brand-icon tigo-brand"><TigoBrandIcon /></span>
+                <span>
+                  <small>Línea Tigo</small>
+                  84517258
+                </span>
+              </a>
+            </div>
+          </div>
         </section>
       </main>
     );
@@ -761,7 +1071,7 @@ export default function App() {
           <h2>Finanzas</h2>
         </div>
         <nav>
-          {(["dashboard", "clients", "loans", "payments", "reports", "settings"] as View[]).map((item) => (
+          {navigationItems.map((item) => (
             <button type="button" key={item} className={view === item ? "active" : ""} onClick={() => setView(item)}>
               {viewLabel(item)}
             </button>
@@ -771,7 +1081,7 @@ export default function App() {
           <div className="session-user">
             <span className="session-dot" aria-hidden="true" />
             <div>
-              <small>Sesión activa</small>
+              <small>{session?.role === "Client" ? "Cliente" : session?.role === "Lender" ? "Prestamista" : "Administrador"}</small>
               <strong>{session?.fullName ?? session?.userName ?? "Administrador"}</strong>
             </div>
           </div>
@@ -782,7 +1092,7 @@ export default function App() {
       <main className="content">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Administrador</span>
+            <span className="eyebrow">{session?.role === "Client" ? "Cliente" : session?.role === "Lender" ? "Prestamista" : "Administrador"}</span>
             <h1>{viewLabel(view)}</h1>
           </div>
           <div className="top-actions">
@@ -791,8 +1101,10 @@ export default function App() {
         </header>
 
         {error && <div className="alert">{error}</div>}
+        {notifications.length > 0 && <NotificationsPanel notifications={notifications} markAsRead={markNotificationRead} />}
 
         {view === "dashboard" && <DashboardView dashboard={dashboard} activeLoans={activeLoans} overdueLoans={overdueLoans} navigate={setView} />}
+        {view === "clientPortal" && <ClientPortalView plans={clientPlans} />}
         {view === "clients" && (
           <ClientsView
             clients={clients}
@@ -831,7 +1143,23 @@ export default function App() {
           <PaymentsView loans={loans} loanDetail={loanDetail} openLoan={(id) => openLoan(id, null)} submitPayment={submitPayment} />
         )}
         {view === "reports" && <ReportsView loans={loans} clients={activeClients} overdueLoans={overdueLoans} />}
-        {view === "settings" && <SettingsView />}
+        {view === "users" && (
+          <UserManagementView
+            users={users}
+            editingUser={editingUser}
+            setEditingUser={setEditingUser}
+            submitUser={submitUser}
+            setUserActive={setUserActive}
+            deleteUser={deleteUser}
+            isSaving={loading}
+          />
+        )}
+        {view === "settings" && (
+          <SettingsView
+            fontSize={appFontSize}
+            setFontSize={setAppFontSize}
+          />
+        )}
       </main>
       {confirmDialog && (
         <ConfirmDialog
@@ -850,8 +1178,35 @@ function viewLabel(view: View) {
     loans: "Préstamos",
     payments: "Pagos",
     reports: "Reportes",
-    settings: "Configuración"
+    users: "Usuarios",
+    settings: "Configuración",
+    clientPortal: "Mi plan de pago"
   }[view];
+}
+
+function NotificationsPanel({ notifications, markAsRead }: { notifications: Notification[]; markAsRead: (id: string) => void }) {
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+
+  return (
+    <Panel title={`Notificaciones${unreadCount > 0 ? ` (${unreadCount})` : ""}`}>
+      <div className="notification-list">
+        {notifications.slice(0, 5).map((notification) => (
+          <div key={notification.id} className={`notification-item ${notification.isRead ? "read" : ""}`}>
+            <div>
+              <strong>{notification.title}</strong>
+              <p>{notification.message}</p>
+              <small>{dateOnly(notification.createdAtUtc)}</small>
+            </div>
+            {!notification.isRead && (
+              <button type="button" className="ghost" onClick={() => markAsRead(notification.id)}>
+                Marcar leída
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
 }
 
 function ConfirmDialog({ dialog, onCancel }: { dialog: ConfirmDialogState; onCancel: () => void }) {
@@ -1031,7 +1386,7 @@ function ClientsView(props: {
           </label>
           <div className="client-submit-row span-3">
             <p className="form-hint">Cédula: 001-010101-0001A. Teléfonos: 8 a 15 dígitos. Si seleccionas transferencia o Kash, agrega el dato correspondiente.</p>
-            <div className="form-actions">
+            <div className="form-actions span-2">
               {props.editingClient && <button type="button" className="ghost" onClick={() => props.setEditingClient(null)}>Cancelar edición</button>}
               <button type="submit" disabled={props.isSaving}>{props.isSaving ? "Guardando..." : props.editingClient ? "Guardar cambios" : "Crear cliente"}</button>
             </div>
@@ -1202,7 +1557,7 @@ function LoansView(props: {
                 <th>Interés</th>
                 <th>Cantidad pagos</th>
                 <th>Estado</th>
-                <th>Saldo</th>
+                <th>Debe</th>
                 <th>Frecuencia</th>
                 <th></th>
               </tr>
@@ -1307,7 +1662,7 @@ function PaymentsView(props: {
                 setPaymentDate(installment ? dateInputValue(installment.dueDate) : dateInputValue(defaultPaymentInstallment(installments)?.dueDate));
               }}
             >
-              <option value="">Aplicar al próximo saldo</option>
+              <option value="">Aplicar al próximo monto pendiente</option>
               {installments.map((installment) => (
                 <option key={installment.id} value={installment.id}>
                   Cuota {installment.installmentNumber} - vence {dateOnly(installment.dueDate)} - pendiente {money(installmentPendingAmount(installment), currencyLabels[props.loanDetail?.loan.currency ?? 1])}
@@ -1344,6 +1699,30 @@ function PaymentsView(props: {
         </form>
       </Panel>
       {props.loanDetail ? <LoanDetailPanel detail={props.loanDetail} /> : <Panel title="Detalle"><p className="muted">Selecciona un préstamo para ver sus cuotas pendientes.</p></Panel>}
+    </section>
+  );
+}
+
+function ClientPortalView({ plans }: { plans: LoanDetail[] }) {
+  if (plans.length === 0) {
+    return (
+      <Panel title="Mi plan de pago">
+        <p className="muted">No tienes préstamos activos registrados para mostrar.</p>
+      </Panel>
+    );
+  }
+
+  return (
+    <section className="stack">
+      <div className="metric-grid">
+        <Metric title="Préstamos" value={String(plans.length)} />
+        <Metric title="Debe C$" value={money(plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0))} tone="warn" />
+        <Metric title="Debe USD" value={money(plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0), "USD")} tone="warn" />
+        <Metric title="Cuotas atrasadas" value={String(plans.flatMap((plan) => plan.installments).filter((installment) => installment.status === 4).length)} tone="danger" />
+      </div>
+      {plans.map((plan) => (
+        <LoanDetailPanel key={plan.loan.id} detail={plan} />
+      ))}
     </section>
   );
 }
@@ -1403,24 +1782,194 @@ function ReportsView({ loans, clients, overdueLoans }: { loans: Loan[]; clients:
   );
 }
 
-function SettingsView() {
+function UserManagementView({
+  users,
+  editingUser,
+  setEditingUser,
+  submitUser,
+  setUserActive,
+  deleteUser,
+  isSaving
+}: {
+  users: AppUser[];
+  editingUser: AppUser | null;
+  setEditingUser: (user: AppUser | null) => void;
+  submitUser: (event: FormEvent<HTMLFormElement>) => void;
+  setUserActive: (user: AppUser, isActive: boolean) => void;
+  deleteUser: (user: AppUser) => void;
+  isSaving: boolean;
+}) {
+  const lenderUsers = users.filter((user) => user.role === 2);
+  const [showLenderPassword, setShowLenderPassword] = useState(false);
+  const [showLenderConfirmPassword, setShowLenderConfirmPassword] = useState(false);
+
   return (
-    <Panel title="Configuración inicial">
-      <div className="settings-grid">
-        <div>
-          <span className="eyebrow">Base de datos</span>
-          <p>SQL Server LocalDB: <strong>CrediPrestAppDB</strong></p>
+    <section className="stack">
+      <Panel title="Crear prestamista">
+        <form className="grid-form" onSubmit={submitUser} key={editingUser?.id ?? "new-user"} autoComplete="off">
+          <label className="field-label">
+            Nombre completo
+            <input name="fullName" placeholder="Nombre completo" defaultValue={editingUser?.fullName ?? ""} autoComplete="off" required />
+          </label>
+          <label className="field-label">
+            Usuario o NickName
+            <input name="lenderAlias" placeholder="Ej. jmedina" defaultValue={editingUser?.userName ?? ""} autoComplete="off" spellCheck={false} required disabled={Boolean(editingUser)} />
+          </label>
+          <label className="field-label">
+            Correo
+            <input name="email" type="email" placeholder="correo@dominio.com" defaultValue={editingUser?.email ?? ""} autoComplete="off" required />
+          </label>
+          <label className="field-label">
+            Teléfono
+            <input name="phone" placeholder="88888888" pattern={phonePattern} defaultValue={editingUser?.phone ?? ""} autoComplete="off" required />
+          </label>
+          <label className="field-label">
+            Cédula
+            <input name="identificationNumber" placeholder="001-010101-0001A" pattern={identificationPattern} defaultValue={editingUser?.identificationNumber ?? ""} autoComplete="off" required />
+          </label>
+          <label className="field-label">
+            Contraseña
+            <div className="password-field">
+              <input
+                name="lenderAccessCode"
+                type={showLenderPassword ? "text" : "password"}
+                autoComplete="new-password"
+                minLength={9}
+                placeholder={editingUser ? "Dejar vacía para conservarla" : "Más de 8 caracteres"}
+                required={!editingUser}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showLenderPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                title={showLenderPassword ? "Ocultar contraseña" : "Ver contraseña"}
+                onClick={() => setShowLenderPassword((value) => !value)}
+              >
+                <EyeIcon crossed={showLenderPassword} />
+              </button>
+            </div>
+          </label>
+          <label className="field-label">
+            Confirmar contraseña
+            <div className="password-field">
+              <input
+                name="lenderAccessConfirm"
+                type={showLenderConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
+                minLength={9}
+                placeholder={editingUser ? "Repetir solo si la cambias" : "Repite la contraseña"}
+                required={!editingUser}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showLenderConfirmPassword ? "Ocultar confirmación" : "Ver confirmación"}
+                title={showLenderConfirmPassword ? "Ocultar confirmación" : "Ver confirmación"}
+                onClick={() => setShowLenderConfirmPassword((value) => !value)}
+              >
+                <EyeIcon crossed={showLenderConfirmPassword} />
+              </button>
+            </div>
+          </label>
+          <p className="form-hint span-2">
+            Estos usuarios podrán entrar como prestamistas y solo verán sus clientes, préstamos, pagos, reportes y dashboard.
+          </p>
+          <div className="form-actions span-2">
+            {editingUser && (
+              <button type="button" className="ghost" onClick={() => setEditingUser(null)} disabled={isSaving}>
+                Cancelar edición
+              </button>
+            )}
+            <button type="submit" disabled={isSaving}>{isSaving ? "Guardando..." : editingUser ? "Guardar cambios" : "Crear prestamista"}</button>
+          </div>
+        </form>
+      </Panel>
+      <Panel title="Prestamistas registrados">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Prestamista</th>
+                <th>Usuario</th>
+                <th>Correo</th>
+                <th>Teléfono</th>
+                <th>Cédula</th>
+                <th>Estado</th>
+                <th className="actions-column">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lenderUsers.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="empty-table-cell">
+                    No hay prestamistas registrados.
+                  </td>
+                </tr>
+              )}
+              {lenderUsers.map((user) => (
+                <tr key={user.id}>
+                  <td><strong>{user.fullName}</strong></td>
+                  <td>{user.userName}</td>
+                  <td>{user.email}</td>
+                  <td>{user.phone ?? "-"}</td>
+                  <td>{user.identificationNumber ?? "-"}</td>
+                  <td><span className={`badge client-${user.isActive ? "active" : "inactive"}`}>{user.isActive ? "Activo" : "Inactivo"}</span></td>
+                  <td>
+                    <div className="row-actions centered">
+                      <button type="button" className="ghost" onClick={() => setEditingUser(user)}>
+                        Editar
+                      </button>
+                      <button type="button" className="ghost" onClick={() => setUserActive(user, !user.isActive)}>
+                        {user.isActive ? "Desactivar" : "Activar"}
+                      </button>
+                      <button type="button" className="ghost danger" onClick={() => deleteUser(user)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div>
-          <span className="eyebrow">Usuario semilla</span>
-          <p><strong>admin</strong> / <strong>Admin123*</strong></p>
+      </Panel>
+    </section>
+  );
+}
+
+function SettingsView({ fontSize, setFontSize }: { fontSize: number; setFontSize: (value: number) => void }) {
+  return (
+    <section className="stack">
+      <Panel title="Preferencias de interfaz">
+        <div className="settings-grid">
+          <div className="setting-control">
+            <span className="eyebrow">Tamaño de letra</span>
+            <p>Ajusta el tamaño general de la app para trabajar más cómodo.</p>
+            <div className="range-row">
+              <input
+                type="range"
+                min="14"
+                max="20"
+                step="1"
+                value={fontSize}
+                onChange={(event) => setFontSize(Number(event.target.value))}
+              />
+              <strong>{fontSize}px</strong>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="ghost" onClick={() => setFontSize(DEFAULT_APP_FONT_SIZE)}>
+                Restablecer
+              </button>
+            </div>
+          </div>
+          <div className="font-preview">
+            <span className="eyebrow">Vista previa</span>
+            <h3>CrediPrest</h3>
+            <p>Texto de ejemplo para revisar cómo se verá la información en tablas, formularios y paneles.</p>
+          </div>
         </div>
-        <div>
-          <span className="eyebrow">API</span>
-          <p>Swagger en <strong>http://localhost:5052/swagger</strong></p>
-        </div>
-      </div>
-    </Panel>
+      </Panel>
+    </section>
   );
 }
 
@@ -1433,10 +1982,11 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
         </button>
       </div>
       <div className="loan-summary">
+        {detail.loan.lenderName && <span>Prestamista {detail.loan.lenderName}</span>}
         {detail.loan.referenceName && <span>Referencia {detail.loan.referenceName}</span>}
         <span>Total {money(detail.loan.totalToPay, currencyLabels[detail.loan.currency])}</span>
         <span>Pagado {money(detail.loan.totalPaid, currencyLabels[detail.loan.currency])}</span>
-        <span>Saldo {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>
+        <span>Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>
         <span>{frequencyLabels[detail.loan.paymentFrequency]}</span>
       </div>
       <div className="table-wrap">
@@ -1450,7 +2000,7 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
               <th>Cuota</th>
               <th>Pagado</th>
               <th>Pendiente</th>
-              <th>Saldo</th>
+              <th>Debe</th>
               <th>Estado</th>
             </tr>
           </thead>

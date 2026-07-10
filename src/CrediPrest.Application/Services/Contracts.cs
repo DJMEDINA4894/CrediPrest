@@ -2,13 +2,16 @@ using CrediPrest.Application.DTOs.Auth;
 using CrediPrest.Application.DTOs.Clients;
 using CrediPrest.Application.DTOs.Dashboard;
 using CrediPrest.Application.DTOs.Loans;
+using CrediPrest.Application.DTOs.Notifications;
 using CrediPrest.Application.DTOs.Payments;
+using CrediPrest.Application.DTOs.Users;
 
 namespace CrediPrest.Application.Services;
 
 public interface IAuthService
 {
     Task<LoginResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
+    Task<LoginResponse> ClientLoginAsync(ClientLoginRequest request, CancellationToken cancellationToken = default);
 }
 
 public interface IClientService
@@ -41,4 +44,23 @@ public interface IPaymentService
 public interface IDashboardService
 {
     Task<DashboardDto> GetAsync(CancellationToken cancellationToken = default);
+}
+
+public interface INotificationService
+{
+    Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task MarkAsReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default);
+}
+
+public interface IClientPortalService
+{
+    Task<IReadOnlyList<LoanDetailDto>> ListPaymentPlansAsync(Guid clientId, CancellationToken cancellationToken = default);
+}
+
+public interface IUserService
+{
+    Task<IReadOnlyList<UserDto>> ListAsync(CancellationToken cancellationToken = default);
+    Task<UserDto> CreateAsync(CreateUserRequest request, CancellationToken cancellationToken = default);
+    Task<UserDto> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }

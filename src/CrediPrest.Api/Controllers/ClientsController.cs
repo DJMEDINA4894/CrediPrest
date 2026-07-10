@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CrediPrest.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "BackOffice")]
 [Route("api/[controller]")]
 public sealed class ClientsController(IClientService clientService) : ControllerBase
 {

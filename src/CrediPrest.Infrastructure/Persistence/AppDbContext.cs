@@ -12,6 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Loan> Loans => Set<Loan>();
     public DbSet<Installment> Installments => Set<Installment>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<LoanStatusCatalog> LoanStatuses => Set<LoanStatusCatalog>();
     public DbSet<PaymentMethodCatalog> PaymentMethods => Set<PaymentMethodCatalog>();
 
@@ -30,10 +31,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasKey(user => user.Id);
             entity.HasIndex(user => user.UserName).IsUnique();
             entity.HasIndex(user => user.Email).IsUnique();
+            entity.HasOne(user => user.Client)
+                .WithMany()
+                .HasForeignKey(user => user.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.Property(user => user.UserName).HasMaxLength(80).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(160).IsRequired();
             entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.FullName).HasMaxLength(160).IsRequired();
+            entity.Property(user => user.Phone).HasMaxLength(40);
+            entity.Property(user => user.IdentificationNumber).HasMaxLength(40);
+            entity.Property(user => user.Role).HasDefaultValue(UserRole.Lender);
         });
 
         modelBuilder.Entity<Client>(entity =>
@@ -41,6 +49,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.ToTable("Clients");
             entity.HasKey(client => client.Id);
             entity.HasIndex(client => client.IdentificationNumber).IsUnique();
+            entity.HasOne(client => client.LenderUser)
+                .WithMany()
+                .HasForeignKey(client => client.LenderUserId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.Property(client => client.FullName).HasMaxLength(180).IsRequired();
             entity.Property(client => client.IdentificationNumber).HasMaxLength(40).IsRequired();
             entity.Property(client => client.Phone).HasMaxLength(40).IsRequired();
@@ -65,6 +77,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasOne(loan => loan.Client)
                 .WithMany(client => client.Loans)
                 .HasForeignKey(loan => loan.ClientId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(loan => loan.LenderUser)
+                .WithMany()
+                .HasForeignKey(loan => loan.LenderUserId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(loan => loan.ReferenceName).HasMaxLength(120);
             entity.Property(loan => loan.PrincipalAmount).HasPrecision(18, 2);
@@ -105,6 +121,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(payment => payment.AmountPaid).HasPrecision(18, 2);
             entity.Property(payment => payment.ReferenceNumber).HasMaxLength(120);
             entity.Property(payment => payment.Notes).HasMaxLength(1200);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.ToTable("Notifications");
+            entity.HasKey(notification => notification.Id);
+            entity.HasOne(notification => notification.User)
+                .WithMany(user => user.Notifications)
+                .HasForeignKey(notification => notification.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(notification => new { notification.UserId, notification.Type, notification.RelatedEntityId }).IsUnique();
+            entity.Property(notification => notification.Title).HasMaxLength(160).IsRequired();
+            entity.Property(notification => notification.Message).HasMaxLength(600).IsRequired();
         });
 
         modelBuilder.Entity<LoanStatusCatalog>(entity =>

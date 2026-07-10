@@ -7,6 +7,8 @@ public sealed class Loan
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ClientId { get; set; }
     public Client Client { get; set; } = null!;
+    public Guid? LenderUserId { get; set; }
+    public User? LenderUser { get; set; }
     public string? ReferenceName { get; set; }
     public decimal PrincipalAmount { get; set; }
     public CurrencyType Currency { get; set; }

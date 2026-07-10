@@ -18,6 +18,7 @@ public sealed record LoanDto(
     Guid Id,
     Guid ClientId,
     string ClientName,
+    string? LenderName,
     string? ReferenceName,
     decimal PrincipalAmount,
     CurrencyType Currency,
