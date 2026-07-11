@@ -11,10 +11,6 @@ namespace CrediPrest.Application.Services;
 
 internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : ILoanService
 {
-    // Dashboard, loans and payments can request this refresh at the same time.
-    // A single in-process gate prevents two EF contexts from updating one installment concurrently.
-    private static readonly SemaphoreSlim OverdueRefreshGate = new(1, 1);
-
     private static readonly Regex MoneyAmountRegex = new(@"(?<amount>\d+(?:[.,]\d{1,2})?)", RegexOptions.Compiled);
 
     public async Task<IReadOnlyList<LoanDto>> ListAsync(string? status, CancellationToken cancellationToken = default)
@@ -185,21 +181,35 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
 
     public async Task RefreshOverdueAsync(CancellationToken cancellationToken = default)
     {
-        await OverdueRefreshGate.WaitAsync(cancellationToken);
+        await LoanDataOperationLock.Gate.WaitAsync(cancellationToken);
+        IDbContextTransaction? transaction = null;
         try
         {
+            if (dbContext is DbContext databaseContext)
+            {
+                transaction = await databaseContext.Database.BeginTransactionAsync(cancellationToken);
+                await databaseContext.Database.ExecuteSqlRawAsync(
+                    $"EXEC sp_getapplock @Resource = N'{LoanDataOperationLock.ResourceName}', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 15000;",
+                    cancellationToken);
+            }
+
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 try
                 {
                     await RefreshOverdueOnceAsync(cancellationToken);
+                    if (transaction is not null)
+                    {
+                        await transaction.CommitAsync(cancellationToken);
+                    }
+
                     return;
                 }
                 catch (DbUpdateConcurrencyException) when (attempt < 2)
                 {
-                    if (dbContext is DbContext efContext)
+                    if (dbContext is DbContext trackedContext)
                     {
-                        foreach (var entry in efContext.ChangeTracker.Entries().ToList())
+                        foreach (var entry in trackedContext.ChangeTracker.Entries().ToList())
                         {
                             entry.State = EntityState.Detached;
                         }
@@ -211,7 +221,12 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
         }
         finally
         {
-            OverdueRefreshGate.Release();
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+
+            LoanDataOperationLock.Gate.Release();
         }
     }
 
@@ -471,4 +486,10 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+}
+
+internal static class LoanDataOperationLock
+{
+    public const string ResourceName = "CrediPrest.LoanDataOperation";
+    public static readonly SemaphoreSlim Gate = new(1, 1);
 }

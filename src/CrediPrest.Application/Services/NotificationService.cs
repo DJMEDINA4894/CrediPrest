@@ -3,6 +3,7 @@ using CrediPrest.Application.DTOs.Notifications;
 using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CrediPrest.Application.Services;
 
@@ -44,8 +45,17 @@ internal sealed class NotificationService(IApplicationDbContext dbContext) : INo
     private async Task EnsurePaymentNotificationsAsync(CancellationToken cancellationToken)
     {
         await PaymentNotificationGate.WaitAsync(cancellationToken);
+        IDbContextTransaction? transaction = null;
         try
         {
+            if (dbContext is DbContext databaseContext)
+            {
+                transaction = await databaseContext.Database.BeginTransactionAsync(cancellationToken);
+                await databaseContext.Database.ExecuteSqlRawAsync(
+                    "EXEC sp_getapplock @Resource = N'CrediPrest.PaymentNotifications', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 15000;",
+                    cancellationToken);
+            }
+
             var today = DateTime.UtcNow.Date;
             var users = await dbContext.Users
                 .Where(user => user.IsActive)
@@ -90,15 +100,24 @@ internal sealed class NotificationService(IApplicationDbContext dbContext) : INo
                 }
             }
 
-            if (dbContext is DbContext efContext && !efContext.ChangeTracker.HasChanges())
+            if (dbContext is DbContext trackedContext && !trackedContext.ChangeTracker.HasChanges())
             {
                 return;
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
         }
         finally
         {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+
             PaymentNotificationGate.Release();
         }
     }

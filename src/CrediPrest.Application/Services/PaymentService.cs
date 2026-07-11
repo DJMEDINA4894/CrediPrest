@@ -4,6 +4,7 @@ using CrediPrest.Application.DTOs.Payments;
 using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CrediPrest.Application.Services;
 
@@ -18,53 +19,81 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
         await loanService.RefreshOverdueAsync(cancellationToken);
 
-        var loan = await ApplyOwnershipFilter(dbContext.Loans)
-            .Include(item => item.Client)
-            .Include(item => item.Installments)
-            .Include(item => item.Payments)
-            .Include(item => item.Charges)
-            .FirstOrDefaultAsync(item => item.Id == request.LoanId && item.Client.IsActive, cancellationToken)
-            ?? throw new KeyNotFoundException("Préstamo no encontrado.");
-
-        if (loan.Status == LoanStatus.Cancelled
-            && loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
-            && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
+        Loan loan;
+        await LoanDataOperationLock.Gate.WaitAsync(cancellationToken);
+        IDbContextTransaction? transaction = null;
+        try
         {
-            throw new InvalidOperationException("El préstamo ya está cancelado.");
+            if (dbContext is DbContext databaseContext)
+            {
+                transaction = await databaseContext.Database.BeginTransactionAsync(cancellationToken);
+                await databaseContext.Database.ExecuteSqlRawAsync(
+                    $"EXEC sp_getapplock @Resource = N'{LoanDataOperationLock.ResourceName}', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 15000;",
+                    cancellationToken);
+            }
+
+            loan = await ApplyOwnershipFilter(dbContext.Loans)
+                .Include(item => item.Client)
+                .Include(item => item.Installments)
+                .Include(item => item.Payments)
+                .Include(item => item.Charges)
+                .FirstOrDefaultAsync(item => item.Id == request.LoanId && item.Client.IsActive, cancellationToken)
+                ?? throw new KeyNotFoundException("Préstamo no encontrado.");
+
+            if (loan.Status == LoanStatus.Cancelled
+                && loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
+                && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
+            {
+                throw new InvalidOperationException("El préstamo ya está cancelado.");
+            }
+
+            var receipt = CreateReceipt(request);
+            if (receipt is not null)
+            {
+                dbContext.PaymentReceipts.Add(receipt);
+            }
+
+            var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
+            var today = DateTime.UtcNow.Date;
+            var overdueInstallments = orderedInstallments.Where(installment => installment.DueDate.Date < today).ToList();
+            var currentInstallments = orderedInstallments.Where(installment => installment.DueDate.Date >= today).ToList();
+            var pendingCharges = loan.Charges
+                .Where(charge => charge.AmountPaid < charge.Amount)
+                .OrderBy(charge => charge.PeriodNumber)
+                .ToList();
+
+            var remainingPayment = request.AmountPaid;
+            remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request, receipt?.Id);
+            remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request, receipt?.Id);
+            remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request, receipt?.Id);
+
+            if (remainingPayment > 0)
+            {
+                throw new InvalidOperationException("El pago excede el saldo pendiente del préstamo.");
+            }
+
+            if (loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
+                && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
+            {
+                loan.Status = LoanStatus.Cancelled;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+
+            LoanDataOperationLock.Gate.Release();
         }
 
-        var receipt = CreateReceipt(request);
-        if (receipt is not null)
-        {
-            dbContext.PaymentReceipts.Add(receipt);
-        }
-
-        var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
-        var today = DateTime.UtcNow.Date;
-        var overdueInstallments = orderedInstallments.Where(installment => installment.DueDate.Date < today).ToList();
-        var currentInstallments = orderedInstallments.Where(installment => installment.DueDate.Date >= today).ToList();
-        var pendingCharges = loan.Charges
-            .Where(charge => charge.AmountPaid < charge.Amount)
-            .OrderBy(charge => charge.PeriodNumber)
-            .ToList();
-
-        var remainingPayment = request.AmountPaid;
-        remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request, receipt?.Id);
-        remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request, receipt?.Id);
-        remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request, receipt?.Id);
-
-        if (remainingPayment > 0)
-        {
-            throw new InvalidOperationException("El pago excede el saldo pendiente del préstamo.");
-        }
-
-        if (loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
-            && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
-        {
-            loan.Status = LoanStatus.Cancelled;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
         await loanService.RefreshOverdueAsync(cancellationToken);
 
         var updatedLoan = await ApplyOwnershipFilter(dbContext.Loans)
