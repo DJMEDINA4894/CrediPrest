@@ -14,4 +14,11 @@ public sealed class PaymentsController(IPaymentService paymentService) : Control
     [HttpPost]
     public async Task<ActionResult<LoanDetailDto>> Register(RegisterPaymentRequest request, CancellationToken cancellationToken)
         => Ok(await paymentService.RegisterAsync(request, cancellationToken));
+
+    [HttpGet("receipts/{receiptId:guid}")]
+    public async Task<IActionResult> Receipt(Guid receiptId, CancellationToken cancellationToken)
+    {
+        var receipt = await paymentService.GetReceiptAsync(receiptId, cancellationToken);
+        return File(receipt.Content, receipt.ContentType, receipt.FileName);
+    }
 }

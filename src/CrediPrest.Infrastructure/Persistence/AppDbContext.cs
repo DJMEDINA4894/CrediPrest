@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<LoanCharge> LoanCharges => Set<LoanCharge>();
     public DbSet<Installment> Installments => Set<Installment>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentReceipt> PaymentReceipts => Set<PaymentReceipt>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<LoanStatusCatalog> LoanStatuses => Set<LoanStatusCatalog>();
     public DbSet<PaymentMethodCatalog> PaymentMethods => Set<PaymentMethodCatalog>();
@@ -139,9 +140,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .WithMany(charge => charge.Payments)
                 .HasForeignKey(payment => payment.LoanChargeId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(payment => payment.Receipt)
+                .WithMany(receipt => receipt.Payments)
+                .HasForeignKey(payment => payment.ReceiptId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.Property(payment => payment.AmountPaid).HasPrecision(18, 2);
             entity.Property(payment => payment.ReferenceNumber).HasMaxLength(120);
             entity.Property(payment => payment.Notes).HasMaxLength(1200);
+        });
+
+        modelBuilder.Entity<PaymentReceipt>(entity =>
+        {
+            entity.ToTable("PaymentReceipts");
+            entity.HasKey(receipt => receipt.Id);
+            entity.Property(receipt => receipt.FileName).HasMaxLength(180).IsRequired();
+            entity.Property(receipt => receipt.ContentType).HasMaxLength(80).IsRequired();
+            entity.Property(receipt => receipt.Content).IsRequired();
         });
 
         modelBuilder.Entity<Notification>(entity =>

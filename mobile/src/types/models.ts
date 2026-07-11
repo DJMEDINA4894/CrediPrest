@@ -23,8 +23,6 @@ export interface Client {
   email?: string;
   personalReference1?: string;
   referencePhone1?: string;
-  personalReference2?: string;
-  referencePhone2?: string;
   bacAccountNumber?: string;
   lafiseAccountNumber?: string;
   bamproAccountNumber?: string;
@@ -45,7 +43,6 @@ export interface Loan {
   clientName: string;
   clientIdentificationNumber: string;
   lenderName?: string;
-  lenderIdentificationNumber?: string;
   referenceName?: string;
   principalAmount: number;
   currency: CurrencyType;
@@ -98,20 +95,6 @@ export interface LoanDetail {
   charges: LoanCharge[];
 }
 
-export interface Payment {
-  id: string;
-  loanId: string;
-  installmentId?: string;
-  loanChargeId?: string;
-  paymentDate: string;
-  amountPaid: number;
-  paymentMethod: PaymentMethod;
-  referenceNumber?: string;
-  notes?: string;
-  receiptId?: string;
-  receiptFileName?: string;
-}
-
 export interface Dashboard {
   totalLoanedCordobas: number;
   totalLoanedUsd: number;
@@ -146,16 +129,4 @@ export interface Notification {
   isRead: boolean;
   createdAtUtc: string;
   relatedEntityId: string;
-}
-
-export interface AppUser {
-  id: string;
-  clientId?: string;
-  userName: string;
-  email: string;
-  fullName: string;
-  phone?: string;
-  identificationNumber?: string;
-  role: 1 | 2 | 3;
-  isActive: boolean;
 }

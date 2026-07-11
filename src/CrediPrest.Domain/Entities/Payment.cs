@@ -16,5 +16,7 @@ public sealed class Payment
     public PaymentMethod PaymentMethod { get; set; }
     public string? ReferenceNumber { get; set; }
     public string? Notes { get; set; }
+    public Guid? ReceiptId { get; set; }
+    public PaymentReceipt? Receipt { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

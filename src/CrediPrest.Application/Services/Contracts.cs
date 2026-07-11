@@ -39,6 +39,7 @@ public interface IPaymentService
 {
     Task<LoanDetailDto> RegisterAsync(RegisterPaymentRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PaymentDto>> ListByLoanAsync(Guid loanId, CancellationToken cancellationToken = default);
+    Task<PaymentReceiptFileDto> GetReceiptAsync(Guid receiptId, CancellationToken cancellationToken = default);
 }
 
 public interface IDashboardService

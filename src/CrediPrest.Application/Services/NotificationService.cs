@@ -8,6 +8,8 @@ namespace CrediPrest.Application.Services;
 
 internal sealed class NotificationService(IApplicationDbContext dbContext) : INotificationService
 {
+    private static readonly SemaphoreSlim PaymentNotificationGate = new(1, 1);
+
     public async Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         await EnsurePaymentNotificationsAsync(cancellationToken);
@@ -41,51 +43,64 @@ internal sealed class NotificationService(IApplicationDbContext dbContext) : INo
 
     private async Task EnsurePaymentNotificationsAsync(CancellationToken cancellationToken)
     {
-        var today = DateTime.UtcNow.Date;
-        var users = await dbContext.Users
-            .Where(user => user.IsActive)
-            .ToListAsync(cancellationToken);
-        var staffUsers = users
-            .Where(user => user.Role is UserRole.Admin or UserRole.Lender)
-            .ToList();
-        var clientUsers = users
-            .Where(user => user.Role == UserRole.Client && user.ClientId.HasValue)
-            .ToList();
-
-        if (staffUsers.Count == 0 && clientUsers.Count == 0)
+        await PaymentNotificationGate.WaitAsync(cancellationToken);
+        try
         {
-            return;
-        }
+            var today = DateTime.UtcNow.Date;
+            var users = await dbContext.Users
+                .Where(user => user.IsActive)
+                .ToListAsync(cancellationToken);
+            var staffUsers = users
+                .Where(user => user.Role is UserRole.Admin or UserRole.Lender)
+                .ToList();
+            var clientUsers = users
+                .Where(user => user.Role == UserRole.Client && user.ClientId.HasValue)
+                .ToList();
 
-        var installments = await dbContext.Installments
-            .Include(installment => installment.Loan)
-            .ThenInclude(loan => loan.Client)
-            .Where(installment => installment.Status != InstallmentStatus.Paid
-                && installment.Loan.Client.IsActive
-                && installment.DueDate.Date <= today)
-            .ToListAsync(cancellationToken);
-
-        foreach (var installment in installments)
-        {
-            var isOverdue = installment.DueDate.Date < today;
-            var type = isOverdue ? NotificationType.OverdueInstallment : NotificationType.DueTodayInstallment;
-            var pendingAmount = Math.Max(0, installment.PaymentAmount - installment.AmountPaid);
-            var title = isOverdue ? "Pago atrasado" : "Pago vence hoy";
-            var staffMessage = $"{installment.Loan.Client.FullName} tiene la cuota {installment.InstallmentNumber} {(isOverdue ? "atrasada" : "pendiente para hoy")} por {pendingAmount:N2}.";
-            var clientMessage = $"Tu cuota {installment.InstallmentNumber} {(isOverdue ? "está atrasada" : "vence hoy")} por {pendingAmount:N2}.";
-
-            foreach (var user in staffUsers.Where(user => user.Role == UserRole.Admin || installment.Loan.LenderUserId == user.Id))
+            if (staffUsers.Count == 0 && clientUsers.Count == 0)
             {
-                await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, staffMessage, cancellationToken);
+                return;
             }
 
-            foreach (var user in clientUsers.Where(user => user.ClientId == installment.Loan.ClientId))
-            {
-                await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, clientMessage, cancellationToken);
-            }
-        }
+            var installments = await dbContext.Installments
+                .Include(installment => installment.Loan)
+                .ThenInclude(loan => loan.Client)
+                .Where(installment => installment.Status != InstallmentStatus.Paid
+                    && installment.Loan.Client.IsActive
+                    && installment.DueDate.Date <= today)
+                .ToListAsync(cancellationToken);
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+            foreach (var installment in installments)
+            {
+                var isOverdue = installment.DueDate.Date < today;
+                var type = isOverdue ? NotificationType.OverdueInstallment : NotificationType.DueTodayInstallment;
+                var pendingAmount = Math.Max(0, installment.PaymentAmount - installment.AmountPaid);
+                var title = isOverdue ? "Pago atrasado" : "Pago vence hoy";
+                var staffMessage = $"{installment.Loan.Client.FullName} tiene la cuota {installment.InstallmentNumber} {(isOverdue ? "atrasada" : "pendiente para hoy")} por {pendingAmount:N2}.";
+                var clientMessage = $"Tu cuota {installment.InstallmentNumber} {(isOverdue ? "está atrasada" : "vence hoy")} por {pendingAmount:N2}.";
+
+                foreach (var user in staffUsers.Where(user => user.Role == UserRole.Admin || installment.Loan.LenderUserId == user.Id))
+                {
+                    await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, staffMessage, cancellationToken);
+                }
+
+                foreach (var user in clientUsers.Where(user => user.ClientId == installment.Loan.ClientId))
+                {
+                    await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, clientMessage, cancellationToken);
+                }
+            }
+
+            if (dbContext is DbContext efContext && !efContext.ChangeTracker.HasChanges())
+            {
+                return;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            PaymentNotificationGate.Release();
+        }
     }
 
     private async Task AddNotificationIfMissingAsync(

@@ -33,6 +33,12 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El préstamo ya está cancelado.");
         }
 
+        var receipt = CreateReceipt(request);
+        if (receipt is not null)
+        {
+            dbContext.PaymentReceipts.Add(receipt);
+        }
+
         var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
         var today = DateTime.UtcNow.Date;
         var overdueInstallments = orderedInstallments.Where(installment => installment.DueDate.Date < today).ToList();
@@ -43,9 +49,9 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .ToList();
 
         var remainingPayment = request.AmountPaid;
-        remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request);
-        remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request);
-        remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request);
+        remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request, receipt?.Id);
+        remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request, receipt?.Id);
+        remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request, receipt?.Id);
 
         if (remainingPayment > 0)
         {
@@ -92,6 +98,29 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         return payments.Select(payment => payment.ToDto()).ToList();
     }
 
+    public async Task<PaymentReceiptFileDto> GetReceiptAsync(Guid receiptId, CancellationToken cancellationToken = default)
+    {
+        var paymentsQuery = dbContext.Payments
+            .Include(payment => payment.Loan)
+            .Where(payment => payment.ReceiptId == receiptId);
+
+        if (currentUser.IsLender && currentUser.UserId.HasValue)
+        {
+            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
+        }
+
+        var hasAccess = await paymentsQuery.AnyAsync(cancellationToken);
+        if (!hasAccess)
+        {
+            throw new KeyNotFoundException("Comprobante no encontrado.");
+        }
+
+        var receipt = await dbContext.PaymentReceipts.FirstOrDefaultAsync(item => item.Id == receiptId, cancellationToken)
+            ?? throw new KeyNotFoundException("Comprobante no encontrado.");
+
+        return new PaymentReceiptFileDto(receipt.FileName, receipt.ContentType, receipt.Content);
+    }
+
     private static InstallmentStatus GetInstallmentStatus(Installment installment)
     {
         if (installment.AmountPaid >= installment.PaymentAmount)
@@ -108,7 +137,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         Loan loan,
         IEnumerable<Installment> installments,
         decimal remainingPayment,
-        RegisterPaymentRequest request)
+        RegisterPaymentRequest request,
+        Guid? receiptId)
     {
         foreach (var installment in installments)
         {
@@ -128,7 +158,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             installment.Status = GetInstallmentStatus(installment);
             installment.PaidAtUtc = installment.Status == InstallmentStatus.Paid ? DateTime.UtcNow : null;
 
-            AddPayment(loan.Id, installment.Id, null, appliedAmount, request);
+            AddPayment(loan.Id, installment.Id, null, appliedAmount, request, receiptId);
             remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
         }
 
@@ -139,7 +169,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         Loan loan,
         IEnumerable<LoanCharge> charges,
         decimal remainingPayment,
-        RegisterPaymentRequest request)
+        RegisterPaymentRequest request,
+        Guid? receiptId)
     {
         foreach (var charge in charges)
         {
@@ -156,14 +187,14 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
             var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingChargeAmount), 2);
             charge.AmountPaid = Math.Round(charge.AmountPaid + appliedAmount, 2);
-            AddPayment(loan.Id, null, charge.Id, appliedAmount, request);
+            AddPayment(loan.Id, null, charge.Id, appliedAmount, request, receiptId);
             remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
         }
 
         return remainingPayment;
     }
 
-    private void AddPayment(Guid loanId, Guid? installmentId, Guid? loanChargeId, decimal amount, RegisterPaymentRequest request)
+    private void AddPayment(Guid loanId, Guid? installmentId, Guid? loanChargeId, decimal amount, RegisterPaymentRequest request, Guid? receiptId)
         => dbContext.Payments.Add(new Payment
         {
             LoanId = loanId,
@@ -173,8 +204,68 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             AmountPaid = amount,
             PaymentMethod = request.PaymentMethod,
             ReferenceNumber = request.ReferenceNumber?.Trim(),
-            Notes = request.Notes?.Trim()
+            Notes = request.Notes?.Trim(),
+            ReceiptId = receiptId
         });
+
+    private static PaymentReceipt? CreateReceipt(RegisterPaymentRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ReceiptImageBase64))
+        {
+            return null;
+        }
+
+        var contentType = request.ReceiptContentType?.Trim().ToLowerInvariant();
+        if (contentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            throw new InvalidOperationException("El comprobante debe ser una imagen JPG, PNG o WEBP.");
+        }
+
+        var base64 = request.ReceiptImageBase64.Trim();
+        var separatorIndex = base64.IndexOf(',');
+        if (base64.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && separatorIndex >= 0)
+        {
+            base64 = base64[(separatorIndex + 1)..];
+        }
+
+        byte[] content;
+        try
+        {
+            content = Convert.FromBase64String(base64);
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException("La imagen del comprobante no tiene un formato válido.");
+        }
+
+        const int maxImageBytes = 5 * 1024 * 1024;
+        if (content.Length == 0 || content.Length > maxImageBytes || !HasValidImageSignature(content, contentType))
+        {
+            throw new InvalidOperationException("El comprobante debe ser una imagen válida de hasta 5 MB.");
+        }
+
+        var fileName = Path.GetFileName(request.ReceiptFileName?.Trim() ?? "comprobante");
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = "comprobante";
+        }
+
+        return new PaymentReceipt
+        {
+            FileName = fileName.Length > 180 ? fileName[..180] : fileName,
+            ContentType = contentType,
+            Content = content
+        };
+    }
+
+    private static bool HasValidImageSignature(byte[] content, string contentType)
+        => contentType switch
+        {
+            "image/jpeg" => content.Length >= 3 && content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF,
+            "image/png" => content.Length >= 8 && content[0] == 0x89 && content[1] == 0x50 && content[2] == 0x4E && content[3] == 0x47,
+            "image/webp" => content.Length >= 12 && content[0] == 0x52 && content[1] == 0x49 && content[2] == 0x46 && content[3] == 0x46 && content[8] == 0x57 && content[9] == 0x45 && content[10] == 0x42 && content[11] == 0x50,
+            _ => false
+        };
 
     private static List<Installment> GetInstallmentsInPaymentOrder(IEnumerable<Installment> installments, Guid? selectedInstallmentId)
     {

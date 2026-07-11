@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api, clearToken, getToken, setToken } from "./api/client";
 import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoginResponse, Notification } from "./types/models";
 
@@ -331,6 +331,37 @@ function formValue(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
+async function paymentReceiptPayload(value: FormDataEntryValue | null) {
+  if (!(value instanceof File) || value.size === 0) {
+    return {};
+  }
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowedTypes.includes(value.type)) {
+    throw new Error("El comprobante debe ser una imagen JPG, PNG o WEBP.");
+  }
+
+  const maxBytes = 5 * 1024 * 1024;
+  if (value.size > maxBytes) {
+    throw new Error("El comprobante no puede superar 5 MB.");
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen del comprobante."));
+    reader.onload = () => typeof reader.result === "string"
+      ? resolve(reader.result)
+      : reject(new Error("No se pudo leer la imagen del comprobante."));
+    reader.readAsDataURL(value);
+  });
+
+  return {
+    receiptImageBase64: dataUrl,
+    receiptFileName: value.name,
+    receiptContentType: value.type
+  };
+}
+
 function savedAppFontSize() {
   const value = Number(localStorage.getItem(APP_FONT_SIZE_KEY));
   return Number.isFinite(value) && value >= 14 && value <= 20 ? value : DEFAULT_APP_FONT_SIZE;
@@ -554,8 +585,14 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const refreshInFlight = useRef(false);
 
   async function refresh(search = clientSearch) {
+    if (refreshInFlight.current) {
+      return;
+    }
+
+    refreshInFlight.current = true;
     setRefreshing(true);
     setError(null);
     try {
@@ -598,6 +635,7 @@ export default function App() {
         setError(err instanceof Error ? err.message : "No se pudo actualizar la información.");
       }
     } finally {
+      refreshInFlight.current = false;
       setRefreshing(false);
     }
   }
@@ -860,18 +898,20 @@ export default function App() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const installmentId = formValue(form, "installmentId");
-    const payload = {
-      loanId: formValue(form, "loanId"),
-      installmentId: installmentId || null,
-      paymentDate: formValue(form, "paymentDate"),
-      amountPaid: numberValue(form, "amountPaid"),
-      paymentMethod: numberValue(form, "paymentMethod"),
-      referenceNumber: formValue(form, "referenceNumber") || undefined,
-      notes: formValue(form, "notes") || undefined
-    };
 
     try {
       setError(null);
+      const receipt = await paymentReceiptPayload(form.get("receiptImage"));
+      const payload = {
+        loanId: formValue(form, "loanId"),
+        installmentId: installmentId || null,
+        paymentDate: formValue(form, "paymentDate"),
+        amountPaid: numberValue(form, "amountPaid"),
+        paymentMethod: numberValue(form, "paymentMethod"),
+        referenceNumber: formValue(form, "referenceNumber") || undefined,
+        notes: formValue(form, "notes") || undefined,
+        ...receipt
+      };
       const detail = await api.registerPayment(payload);
       setLoanDetail(detail);
       formElement.reset();
@@ -1722,6 +1762,7 @@ function PaymentsView(props: {
   );
   const [selectedInstallmentId, setSelectedInstallmentId] = useState("");
   const [paymentDate, setPaymentDate] = useState(dateInputValue());
+  const [paymentMethod, setPaymentMethod] = useState(1);
 
   useEffect(() => {
     const installment = defaultPaymentInstallment(installments);
@@ -1774,7 +1815,7 @@ function PaymentsView(props: {
           </label>
           <label className="field-label">
             Método de pago
-            <select name="paymentMethod" defaultValue="1">
+            <select name="paymentMethod" value={paymentMethod} onChange={(event) => setPaymentMethod(Number(event.target.value))}>
               <option value="1">Efectivo</option>
               <option value="2">Transferencia</option>
               <option value="3">Depósito</option>
@@ -1785,6 +1826,13 @@ function PaymentsView(props: {
             Referencia
             <input name="referenceNumber" placeholder="Referencia o comprobante" />
           </label>
+          {(paymentMethod === 2 || paymentMethod === 3) && (
+            <label className="field-label">
+              Imagen del comprobante
+              <input name="receiptImage" type="file" accept="image/jpeg,image/png,image/webp" />
+              <small className="form-hint">Opcional. JPG, PNG o WEBP de hasta 5 MB.</small>
+            </label>
+          )}
           <label className="field-label span-2">
             Observaciones
             <textarea name="notes" placeholder="Observaciones opcionales" />

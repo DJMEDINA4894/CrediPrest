@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "CrediPrest",
+    "slug": "crediprest-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.crediprest.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#10383f",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CrediPrest necesita acceso a tus fotos para adjuntar comprobantes de pago.",
+          "cameraPermission": "CrediPrest necesita acceso a la camara para fotografiar comprobantes de pago.",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}

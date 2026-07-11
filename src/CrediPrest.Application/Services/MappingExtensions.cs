@@ -132,5 +132,7 @@ internal static class MappingExtensions
             payment.AmountPaid,
             payment.PaymentMethod,
             payment.ReferenceNumber,
-            payment.Notes);
+            payment.Notes,
+            payment.ReceiptId,
+            payment.Receipt?.FileName);
 }

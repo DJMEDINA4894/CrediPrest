@@ -11,6 +11,10 @@ namespace CrediPrest.Application.Services;
 
 internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : ILoanService
 {
+    // Dashboard, loans and payments can request this refresh at the same time.
+    // A single in-process gate prevents two EF contexts from updating one installment concurrently.
+    private static readonly SemaphoreSlim OverdueRefreshGate = new(1, 1);
+
     private static readonly Regex MoneyAmountRegex = new(@"(?<amount>\d+(?:[.,]\d{1,2})?)", RegexOptions.Compiled);
 
     public async Task<IReadOnlyList<LoanDto>> ListAsync(string? status, CancellationToken cancellationToken = default)
@@ -154,8 +158,20 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             .Where(payment => payment.LoanId == id
                 || (payment.InstallmentId.HasValue && installmentIds.Contains(payment.InstallmentId.Value)))
             .ToListAsync(cancellationToken);
+        var receiptIds = payments
+            .Where(payment => payment.ReceiptId.HasValue)
+            .Select(payment => payment.ReceiptId!.Value)
+            .Distinct()
+            .ToList();
 
         dbContext.Payments.RemoveRange(payments);
+        if (receiptIds.Count > 0)
+        {
+            var receipts = await dbContext.PaymentReceipts
+                .Where(receipt => receiptIds.Contains(receipt.Id))
+                .ToListAsync(cancellationToken);
+            dbContext.PaymentReceipts.RemoveRange(receipts);
+        }
         dbContext.LoanCharges.RemoveRange(loan.Charges);
         dbContext.Installments.RemoveRange(loan.Installments);
         dbContext.Loans.Remove(loan);
@@ -168,6 +184,38 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
     }
 
     public async Task RefreshOverdueAsync(CancellationToken cancellationToken = default)
+    {
+        await OverdueRefreshGate.WaitAsync(cancellationToken);
+        try
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    await RefreshOverdueOnceAsync(cancellationToken);
+                    return;
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < 2)
+                {
+                    if (dbContext is DbContext efContext)
+                    {
+                        foreach (var entry in efContext.ChangeTracker.Entries().ToList())
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+                }
+            }
+        }
+        finally
+        {
+            OverdueRefreshGate.Release();
+        }
+    }
+
+    private async Task RefreshOverdueOnceAsync(CancellationToken cancellationToken)
     {
         var today = DateTime.UtcNow.Date;
         var loans = await dbContext.Loans
@@ -197,6 +245,11 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
             var hasPendingCharges = loan.Charges.Any(charge => charge.AmountPaid < charge.Amount);
             var isPaid = loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid) && !hasPendingCharges;
             loan.Status = isPaid ? LoanStatus.Cancelled : hasOverdue || hasPendingCharges ? LoanStatus.Overdue : LoanStatus.Active;
+        }
+
+        if (dbContext is DbContext efContext && !efContext.ChangeTracker.HasChanges())
+        {
+            return;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

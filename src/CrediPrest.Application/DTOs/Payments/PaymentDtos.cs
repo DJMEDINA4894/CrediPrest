@@ -11,7 +11,9 @@ public sealed record PaymentDto(
     decimal AmountPaid,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,
-    string? Notes);
+    string? Notes,
+    Guid? ReceiptId,
+    string? ReceiptFileName);
 
 public sealed record RegisterPaymentRequest(
     Guid LoanId,
@@ -20,4 +22,9 @@ public sealed record RegisterPaymentRequest(
     decimal AmountPaid,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,
-    string? Notes);
+    string? Notes,
+    string? ReceiptImageBase64,
+    string? ReceiptFileName,
+    string? ReceiptContentType);
+
+public sealed record PaymentReceiptFileDto(string FileName, string ContentType, byte[] Content);

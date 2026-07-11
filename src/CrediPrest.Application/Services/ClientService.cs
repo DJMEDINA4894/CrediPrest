@@ -150,7 +150,19 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
                 .Where(payment => loanIds.Contains(payment.LoanId)
                     || (payment.InstallmentId.HasValue && installmentIds.Contains(payment.InstallmentId.Value)))
                 .ToListAsync(cancellationToken);
+            var receiptIds = payments
+                .Where(payment => payment.ReceiptId.HasValue)
+                .Select(payment => payment.ReceiptId!.Value)
+                .Distinct()
+                .ToList();
             dbContext.Payments.RemoveRange(payments);
+            if (receiptIds.Count > 0)
+            {
+                var receipts = await dbContext.PaymentReceipts
+                    .Where(receipt => receiptIds.Contains(receipt.Id))
+                    .ToListAsync(cancellationToken);
+                dbContext.PaymentReceipts.RemoveRange(receipts);
+            }
 
             var charges = await dbContext.LoanCharges
                 .Where(charge => loanIds.Contains(charge.LoanId))
