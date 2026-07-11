@@ -4,10 +4,13 @@ using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class NotificationService(IApplicationDbContext dbContext) : INotificationService
+internal sealed class NotificationService(
+    IApplicationDbContext dbContext,
+    ILogger<NotificationService> logger) : INotificationService
 {
     private static readonly SemaphoreSlim PaymentNotificationGate = new(1, 1);
 
@@ -110,6 +113,12 @@ internal sealed class NotificationService(IApplicationDbContext dbContext) : INo
             {
                 await transaction.CommitAsync(cancellationToken);
             }
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "No se pudieron sincronizar las notificaciones automáticas por una actualización concurrente; se continuará con la consulta.");
         }
         finally
         {

@@ -4,12 +4,16 @@ using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : ILoanService
+internal sealed class LoanService(
+    IApplicationDbContext dbContext,
+    ICurrentUserContext currentUser,
+    ILogger<LoanService> logger) : ILoanService
 {
     private static readonly Regex MoneyAmountRegex = new(@"(?<amount>\d+(?:[.,]\d{1,2})?)", RegexOptions.Compiled);
 
@@ -216,6 +220,22 @@ internal sealed class LoanService(IApplicationDbContext dbContext, ICurrentUserC
                     }
 
                     await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "No se pudo actualizar el estado automático de las cuotas después de varios intentos; se continuará con la consulta.");
+
+                    if (dbContext is DbContext trackedContext)
+                    {
+                        foreach (var entry in trackedContext.ChangeTracker.Entries().ToList())
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+                    }
+
+                    return;
                 }
             }
         }
