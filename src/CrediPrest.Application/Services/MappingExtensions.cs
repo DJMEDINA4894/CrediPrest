@@ -113,7 +113,10 @@ internal static class MappingExtensions
         var lateFeesTotal = loan.Charges.Sum(charge => charge.Amount);
         var lateFeesPaid = loan.Charges.Sum(charge => charge.AmountPaid);
         var lateFeesPending = GetPendingChargesAmount(loan);
-        var totalPaid = installmentPaid + lateFeesPaid;
+        var extraordinaryPrincipalPaid = loan.Payments
+            .Where(payment => payment.Type == PaymentType.ExtraordinaryPrincipal)
+            .Sum(payment => payment.AmountPaid);
+        var totalPaid = installmentPaid + lateFeesPaid + extraordinaryPrincipalPaid;
 
         return new LoanDto(
             loan.Id,
@@ -137,7 +140,7 @@ internal static class MappingExtensions
             lateFeesTotal,
             lateFeesPaid,
             lateFeesPending,
-            Math.Max(0, loan.TotalToPay - installmentPaid) + lateFeesPending,
+            Math.Max(0, loan.TotalToPay - installmentPaid - extraordinaryPrincipalPaid) + lateFeesPending,
             loan.Notes,
             loan.AgreementCity,
             string.IsNullOrWhiteSpace(loan.LateFeeDescription) ? "50%" : loan.LateFeeDescription);
@@ -186,9 +189,19 @@ internal static class MappingExtensions
             payment.LoanChargeId,
             payment.PaymentDate,
             payment.AmountPaid,
+            payment.Type,
             payment.PaymentMethod,
             payment.ReferenceNumber,
             payment.Notes,
             payment.ReceiptId,
-            payment.Receipt?.FileName);
+            payment.Receipt?.FileName,
+            payment.RecalculationMode,
+            payment.PreviousOutstandingPrincipal,
+            payment.NewOutstandingPrincipal,
+            payment.PreviousInstallmentAmount,
+            payment.NewInstallmentAmount,
+            payment.PreviousInstallmentCount,
+            payment.NewInstallmentCount,
+            payment.PreviousPendingInterest,
+            payment.NewPendingInterest);
 }

@@ -38,6 +38,23 @@ export function installmentPendingAmount(installment: Installment) {
   return Math.max(0, installment.paymentAmount - installment.amountPaid);
 }
 
+export function canMakeExtraordinaryPayment(detail: LoanDetail) {
+  if (detail.loan.status !== 1 || detail.loan.pendingBalance <= 0 || detail.loan.lateFeesPending > 0) {
+    return false;
+  }
+
+  const today = dateInputValue();
+  const hasUnpaidLateFee = detail.charges.some((charge) => charge.pendingAmount > 0 || charge.amountPaid < charge.amount);
+  const hasIrregularInstallment = detail.installments.some((installment) => {
+    const isPending = installment.amountPaid < installment.paymentAmount;
+    const isPartial = installment.amountPaid > 0 && isPending;
+    const isOverdue = isPending && installment.dueDate.slice(0, 10) < today;
+    return isPartial || isOverdue;
+  });
+
+  return !hasUnpaidLateFee && !hasIrregularInstallment;
+}
+
 function lateFeePeriodSize(paymentFrequency: number) {
   return paymentFrequency === 1 ? 4 : paymentFrequency === 2 ? 2 : 1;
 }

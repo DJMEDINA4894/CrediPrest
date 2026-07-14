@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import type { TextInputProps, TextProps } from "react-native";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text as NativeText, TextInput, View } from "react-native";
 import { usePreferences } from "../context/PreferencesContext";
@@ -23,6 +24,42 @@ export function Card({ title, children, tone }: { title?: string; children: Reac
       {title ? <Text style={styles.cardTitle}>{title}</Text> : null}
       {children}
     </View>
+  );
+}
+
+export function InfoTooltip({ title = "Información", message }: { title?: string; message: string }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <>
+      <Pressable
+        accessibilityLabel={`Ver información: ${title}`}
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={() => setVisible(true)}
+        style={styles.infoButton}
+      >
+        <Ionicons color="#1769aa" name="information" size={16} />
+      </Pressable>
+      <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
+        <Pressable onPress={() => setVisible(false)} style={styles.infoOverlay}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={styles.infoPanel}>
+            <View style={styles.infoHeader}>
+              <View style={styles.infoTitleRow}>
+                <View style={styles.infoTitleIcon}>
+                  <Ionicons color="#1769aa" name="information" size={17} />
+                </View>
+                <Text style={styles.infoTitle}>{title}</Text>
+              </View>
+              <Pressable accessibilityLabel="Cerrar información" hitSlop={8} onPress={() => setVisible(false)}>
+                <Ionicons color={colors.muted} name="close" size={22} />
+              </Pressable>
+            </View>
+            <Text style={styles.infoMessage}>{message}</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -70,6 +107,7 @@ export function SecondaryButton({ title, onPress }: { title: string; onPress: ()
 
 export function Field({
   label,
+  labelAccessory,
   suffix,
   rightActionContent,
   rightActionAccessibilityLabel,
@@ -78,6 +116,7 @@ export function Field({
   ...props
 }: TextInputProps & {
   label: string;
+  labelAccessory?: ReactNode;
   suffix?: string;
   rightActionContent?: ReactNode;
   rightActionAccessibilityLabel?: string;
@@ -87,7 +126,10 @@ export function Field({
 
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>{label}</Text>
+        {labelAccessory}
+      </View>
       <View style={styles.inputWithSuffix}>
         <TextInput
           placeholderTextColor="#8b9ba6"
@@ -119,7 +161,8 @@ export function SelectField({
   options,
   onChange,
   placeholder = "Selecciona una opción",
-  disabled
+  disabled,
+  inputAccessory
 }: {
   label: string;
   value: string;
@@ -127,6 +170,7 @@ export function SelectField({
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  inputAccessory?: ReactNode;
 }) {
   const [visible, setVisible] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label;
@@ -134,10 +178,13 @@ export function SelectField({
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <Pressable disabled={disabled} onPress={() => setVisible(true)} style={[styles.select, disabled && styles.selectDisabled]}>
-        <Text numberOfLines={1} style={[styles.selectText, !selectedLabel && styles.selectPlaceholder]}>{selectedLabel ?? placeholder}</Text>
-        <Text style={styles.selectChevron}>⌄</Text>
-      </Pressable>
+      <View style={styles.selectInputRow}>
+        <Pressable disabled={disabled} onPress={() => setVisible(true)} style={[styles.select, styles.selectInput, disabled && styles.selectDisabled]}>
+          <Text numberOfLines={1} style={[styles.selectText, !selectedLabel && styles.selectPlaceholder]}>{selectedLabel ?? placeholder}</Text>
+          <Text style={styles.selectChevron}>⌄</Text>
+        </Pressable>
+        {inputAccessory}
+      </View>
       <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
         <Pressable onPress={() => setVisible(false)} style={styles.modalOverlay}>
           <Pressable onPress={(event) => event.stopPropagation()} style={styles.selectModal}>
@@ -204,6 +251,61 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: spacing.sm
   },
+  infoButton: {
+    alignItems: "center",
+    backgroundColor: "#e7f2fb",
+    borderColor: "#77add4",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: "center",
+    width: 22
+  },
+  infoOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 34, 50, 0.45)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  infoPanel: {
+    backgroundColor: "#fff",
+    borderColor: "#9ac2df",
+    borderRadius: 10,
+    borderWidth: 1,
+    maxWidth: 440,
+    padding: spacing.md,
+    width: "100%"
+  },
+  infoHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm
+  },
+  infoTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flex: 1,
+    gap: spacing.sm
+  },
+  infoTitleIcon: {
+    alignItems: "center",
+    backgroundColor: "#e7f2fb",
+    borderRadius: 999,
+    height: 24,
+    justifyContent: "center",
+    width: 24
+  },
+  infoTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  infoMessage: {
+    color: colors.text,
+    lineHeight: 21
+  },
   button: {
     alignItems: "center",
     backgroundColor: colors.primary,
@@ -268,6 +370,14 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: spacing.md
   },
+  selectInputRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  selectInput: {
+    flex: 1
+  },
   selectDisabled: {
     backgroundColor: "#edf1f3",
     opacity: 0.7
@@ -330,6 +440,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: "800"
+  },
+  labelRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs
   },
   input: {
     backgroundColor: "#fff",

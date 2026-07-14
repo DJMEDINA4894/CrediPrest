@@ -11,6 +11,7 @@ namespace CrediPrest.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class LoansController(
     ILoanService loanService,
+    INotificationService notificationService,
     IPaymentService paymentService,
     IWebHostEnvironment environment) : ControllerBase
 {
@@ -31,21 +32,25 @@ public sealed class LoansController(
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<LoanDetailDto>> Update(Guid id, UpdateLoanRequest request, CancellationToken cancellationToken)
-        => Ok(await loanService.UpdateAsync(id, request, cancellationToken));
+    {
+        var loan = await loanService.UpdateAsync(id, request, cancellationToken);
+        await notificationService.RefreshAutomaticAsync(cancellationToken);
+        return Ok(loan);
+    }
 
-    [HttpPost("{id:guid}/recalculation/preview")]
-    public async Task<ActionResult<LoanRecalculationPreviewDto>> PreviewRecalculation(
+    [HttpPost("{id:guid}/extraordinary-payment/preview")]
+    public async Task<ActionResult<LoanRecalculationPreviewDto>> PreviewExtraordinaryPayment(
         Guid id,
-        RecalculateLoanRequest request,
+        ExtraordinaryPaymentPreviewRequest request,
         CancellationToken cancellationToken)
-        => Ok(await loanService.PreviewRecalculationAsync(id, request, cancellationToken));
+        => Ok(await loanService.PreviewExtraordinaryPaymentAsync(id, request, cancellationToken));
 
-    [HttpPost("{id:guid}/recalculate")]
-    public async Task<ActionResult<LoanDetailDto>> Recalculate(
+    [HttpPost("{id:guid}/extraordinary-payment")]
+    public async Task<ActionResult<LoanDetailDto>> RegisterExtraordinaryPayment(
         Guid id,
-        RecalculateLoanRequest request,
+        RegisterExtraordinaryPaymentRequest request,
         CancellationToken cancellationToken)
-        => Ok(await loanService.RecalculateAsync(id, request, cancellationToken));
+        => Ok(await loanService.RegisterExtraordinaryPaymentAsync(id, request, cancellationToken));
 
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
@@ -72,6 +77,16 @@ public sealed class LoansController(
             document,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             LoanAgreementDocumentBuilder.FileName(detail.Loan));
+    }
+
+    [HttpGet("{id:guid}/payment-plan.pdf")]
+    public async Task<IActionResult> PaymentPlanPdf(Guid id, CancellationToken cancellationToken)
+    {
+        var detail = await loanService.GetDetailAsync(id, cancellationToken);
+        return File(
+            LoanPaymentTablePdfBuilder.Build(detail),
+            "application/pdf",
+            LoanPaymentTablePdfBuilder.FileName(detail.Loan));
     }
 
     [HttpGet("{id:guid}/payments")]

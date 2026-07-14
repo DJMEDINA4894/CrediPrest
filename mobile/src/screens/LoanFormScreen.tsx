@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import { Alert, RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Field, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
+import { Card, EmptyState, ErrorText, Field, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { Client } from "../types/models";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -138,8 +138,15 @@ export function LoanFormScreen({ route, navigation }: Props) {
           <Field label="Fecha de inicio" value={startDate} onChangeText={setStartDate} placeholder="AAAA-MM-DD" />
           <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
           <Field label="Ciudad del acuerdo" value={agreementCity} onChangeText={setAgreementCity} placeholder="Ej. Managua" />
-          <Field label="Tasa de mora (% de la tasa de interés)" value={lateFeeDescription} onChangeText={setLateFeeDescription} placeholder="Ej. 50" keyboardType="decimal-pad" suffix="%" />
-          <Text style={styles.hint}>{lateFeeExplanation}</Text>
+          <Field
+            label="Tasa de mora (% de la tasa de interés)"
+            labelAccessory={<InfoTooltip title="Cómo se calcula la mora" message={lateFeeExplanation} />}
+            value={lateFeeDescription}
+            onChangeText={setLateFeeDescription}
+            placeholder="Ej. 50"
+            keyboardType="decimal-pad"
+            suffix="%"
+          />
           <Text style={styles.hint}>El plazo se calcula por frecuencia: semanal cada 7 dias, quincenal cada 15 dias y mensual cada mes.</Text>
           <PrimaryButton title={loan ? "Guardar cambios" : "Crear y generar cuotas"} onPress={() => void save()} loading={saving} disabled={!loan && clients.length === 0} />
         </Card>

@@ -31,7 +31,13 @@
           "cameraPermission": "CrediPrest necesita acceso a la camara para fotografiar comprobantes de pago.",
           "microphonePermission": false
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e720ac50-7617-44f2-bf3d-381c43bdda09"
+      }
+    }
   }
 }

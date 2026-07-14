@@ -106,16 +106,20 @@ export interface LoanDetail {
 
 export interface LoanRecalculationPreview {
   loanId: string;
-  mode: 1 | 2;
+  mode: 1 | 2 | 3;
   effectiveDate: string;
   firstDueDate: string;
   outstandingPrincipal: number;
+  extraordinaryPaymentAmount: number;
+  principalAfterPayment: number;
   currentInstallmentAmount: number;
   newInstallmentAmount: number;
   paidInstallments: number;
   currentRemainingInstallments: number;
   newRemainingInstallments: number;
+  currentPendingInterest: number;
   newInterest: number;
+  interestSavings: number;
   newPendingTotal: number;
 }
 
@@ -147,7 +151,7 @@ export interface Dashboard {
 
 export interface Notification {
   id: string;
-  type: 1 | 2 | 3 | 4;
+  type: 1 | 2 | 3 | 4 | 5;
   title: string;
   message: string;
   isRead: boolean;
@@ -164,11 +168,21 @@ export interface Payment {
   loanChargeId?: string;
   paymentDate: string;
   amountPaid: number;
+  type: 1 | 2;
   paymentMethod: PaymentMethod;
   referenceNumber?: string;
   notes?: string;
   receiptId?: string;
   receiptFileName?: string;
+  recalculationMode?: 1 | 2 | 3;
+  previousOutstandingPrincipal?: number;
+  newOutstandingPrincipal?: number;
+  previousInstallmentAmount?: number;
+  newInstallmentAmount?: number;
+  previousInstallmentCount?: number;
+  newInstallmentCount?: number;
+  previousPendingInterest?: number;
+  newPendingInterest?: number;
 }
 
 export interface AppUser {

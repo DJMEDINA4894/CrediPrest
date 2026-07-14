@@ -120,7 +120,7 @@ function lateFeePolicyTextForFrequency(paymentFrequency: number, principalAmount
   return lateFeePolicyText({ paymentFrequency, principalAmount, monthlyInterestRate, lateFeeDescription, currency, termMonths });
 }
 
-function InfoTooltip({ text }: { text: string }) {
+function InfoTooltip({ text, ariaLabel = "Más información" }: { text: React.ReactNode; ariaLabel?: string }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -128,7 +128,7 @@ function InfoTooltip({ text }: { text: string }) {
       <button
         type="button"
         className="info-tooltip-trigger"
-        aria-label="Información sobre la mora"
+        aria-label={ariaLabel}
         aria-expanded={isOpen}
         onClick={(event) => {
           event.preventDefault();
@@ -183,6 +183,23 @@ function dualMoney(cordobas = 0, usd = 0) {
 
 function installmentPendingAmount(installment: Installment) {
   return Math.max(0, installment.paymentAmount - installment.amountPaid);
+}
+
+function canMakeExtraordinaryPayment(detail: LoanDetail) {
+  if (detail.loan.status !== 1 || detail.loan.pendingBalance <= 0 || detail.loan.lateFeesPending > 0) {
+    return false;
+  }
+
+  const today = dateInputValue();
+  const hasUnpaidLateFee = detail.charges.some((charge) => charge.pendingAmount > 0 || charge.amountPaid < charge.amount);
+  const hasIrregularInstallment = detail.installments.some((installment) => {
+    const isPending = installment.amountPaid < installment.paymentAmount;
+    const isPartial = installment.amountPaid > 0 && isPending;
+    const isOverdue = isPending && installment.dueDate.slice(0, 10) < today;
+    return isPartial || isOverdue;
+  });
+
+  return !hasUnpaidLateFee && !hasIrregularInstallment;
 }
 
 function lateFeePeriodSize(paymentFrequency: number) {
@@ -269,152 +286,8 @@ function printableText(value: string) {
     .trim();
 }
 
-function escapePdfText(value: string) {
-  return printableText(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-}
-
-function truncatePdfText(value: string, maxLength: number) {
-  const text = printableText(value);
-  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 3))}...` : text;
-}
-
-function pdfText(x: number, y: number, value: string, size = 9, font = "F1") {
-  return `BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfText(value)}) Tj ET`;
-}
-
-function pdfLine(x1: number, y1: number, x2: number, y2: number) {
-  return `${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`;
-}
-
-function buildPaymentTablePdf(detail: LoanDetail) {
-  const pageWidth = 842;
-  const pageHeight = 595;
-  const margin = 32;
-  const rowHeight = 18;
-  const columns = [
-    { title: "#", width: 25, max: 4 },
-    { title: "Vence", width: 85, max: 18 },
-    { title: "Capital", width: 75, max: 18 },
-    { title: "Interes", width: 75, max: 18 },
-    { title: "Cuota", width: 80, max: 18 },
-    { title: "Mora", width: 62, max: 18 },
-    { title: "Pagado", width: 80, max: 18 },
-    { title: "Pendiente", width: 85, max: 18 },
-    { title: "Debe", width: 78, max: 18 },
-    { title: "Estado", width: 72, max: 16 }
-  ];
-  const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
-  const currency = currencyLabels[detail.loan.currency];
-  const rows = detail.installments.map((installment) => {
-    const mora = lateFeeAllocation(detail, installment);
-
-    return [
-      String(installment.installmentNumber),
-      dateOnly(installment.dueDate),
-      money(installment.principalAmount, currency),
-      money(installment.interestAmount, currency),
-      money(installment.paymentAmount, currency),
-      mora.amount > 0 ? money(mora.amount, currency) : "-",
-      money(installment.amountPaid + mora.amountPaid, currency),
-      money(installmentPendingAmount(installment) + mora.pendingAmount, currency),
-      money(installment.remainingBalance, currency),
-      installmentStatusLabels[installment.status]
-    ];
-  });
-
-  const pages: string[] = [];
-  let rowIndex = 0;
-  let pageNumber = 1;
-
-  while (rowIndex < rows.length || pages.length === 0) {
-    const lines: string[] = ["0.2 w"];
-    let y = pageHeight - margin;
-
-    lines.push(pdfText(margin, y, "CrediPrest - Tabla de pagos", 16, "F2"));
-    lines.push(pdfText(pageWidth - 115, y, `Pagina ${pageNumber}`, 8));
-    y -= 22;
-    lines.push(pdfText(margin, y, `Cliente: ${detail.loan.clientName}`, 10, "F2"));
-    lines.push(pdfText(360, y, `Frecuencia: ${frequencyLabels[detail.loan.paymentFrequency]}`, 10));
-    y -= 16;
-    if (detail.loan.lenderName) {
-      lines.push(pdfText(margin, y, `Prestamista: ${detail.loan.lenderName}`, 9));
-      y -= 16;
-    }
-    if (detail.loan.referenceName) {
-      lines.push(pdfText(margin, y, `Referencia: ${detail.loan.referenceName}`, 9));
-      y -= 16;
-    }
-    lines.push(pdfText(margin, y, `Prestado: ${money(detail.loan.principalAmount, currency)}`, 9));
-    lines.push(pdfText(190, y, `Interes mensual: ${detail.loan.monthlyInterestRate}%`, 9));
-    lines.push(pdfText(360, y, `Total: ${money(detail.loan.totalToPay, currency)}`, 9));
-    lines.push(pdfText(520, y, `Pagado: ${money(detail.loan.totalPaid, currency)}`, 9));
-    lines.push(pdfText(670, y, `Debe: ${money(detail.loan.pendingBalance, currency)}`, 9));
-    y -= 22;
-    if (detail.loan.lateFeesPending > 0) {
-      lines.push(pdfText(margin, y, `Mora pendiente: ${money(detail.loan.lateFeesPending, currency)}`, 9, "F2"));
-      y -= 18;
-    }
-
-    const tableLeft = margin;
-    const headerTop = y + 6;
-    const headerBottom = y - rowHeight + 5;
-    lines.push(pdfLine(tableLeft, headerTop, tableLeft + tableWidth, headerTop));
-    lines.push(pdfLine(tableLeft, headerBottom, tableLeft + tableWidth, headerBottom));
-
-    let x = tableLeft + 4;
-    columns.forEach((column) => {
-      lines.push(pdfText(x, y - 7, column.title, 8, "F2"));
-      x += column.width;
-    });
-    y -= rowHeight;
-
-    while (rowIndex < rows.length && y > margin + 32) {
-      x = tableLeft + 4;
-      columns.forEach((column, columnIndex) => {
-        lines.push(pdfText(x, y - 7, truncatePdfText(rows[rowIndex][columnIndex], column.max), 8));
-        x += column.width;
-      });
-      lines.push(pdfLine(tableLeft, y - rowHeight + 5, tableLeft + tableWidth, y - rowHeight + 5));
-      y -= rowHeight;
-      rowIndex += 1;
-    }
-
-    lines.push(pdfText(margin, margin, `Generado: ${dateOnly(new Date().toISOString())}`, 8));
-    pages.push(lines.join("\n"));
-    pageNumber += 1;
-  }
-
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    `<< /Type /Pages /Kids [${pages.map((_, index) => `${5 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
-  ];
-
-  pages.forEach((content, index) => {
-    const contentObjectId = 6 + index * 2;
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
-    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
-  });
-
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xrefOffset = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  offsets.slice(1).forEach((offset) => {
-    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  });
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-  return new Blob([pdf], { type: "application/pdf" });
-}
-
-function downloadPaymentTablePdf(detail: LoanDetail) {
-  const blob = buildPaymentTablePdf(detail);
+async function downloadPaymentTablePdf(detail: LoanDetail) {
+  const blob = await api.loanPaymentTable(detail.loan.id);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const clientName = printableText(loanDisplayName(detail.loan)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -2410,12 +2283,21 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
   return (
     <Panel title={`Tabla de pagos - ${loanDisplayName(detail.loan)}`}>
       <div className="panel-toolbar">
-        {onRecalculate && detail.installments.some((installment) => installment.amountPaid >= installment.paymentAmount) && detail.loan.pendingBalance > 0 && (
+        {onRecalculate && canMakeExtraordinaryPayment(detail) && (
           <button type="button" className="ghost" onClick={onRecalculate}>
-            Recalcular cuotas
+            Abono extraordinario
           </button>
         )}
-        <button type="button" className="ghost" onClick={() => downloadPaymentTablePdf(detail)}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            setAgreementError("");
+            downloadPaymentTablePdf(detail).catch((error) => {
+              setAgreementError(error instanceof Error ? error.message : "No se pudo descargar la tabla de pagos.");
+            });
+          }}
+        >
           Descargar PDF
         </button>
         <button
@@ -2531,20 +2413,38 @@ function LoanRecalculationDialog({
   onClose: () => void;
   onApplied: (detail: LoanDetail) => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<1 | 2>(1);
+  const [mode, setMode] = useState<1 | 2 | 3>(1);
   const [effectiveDate, setEffectiveDate] = useState(dateInputValue());
+  const [amount, setAmount] = useState("");
+  const [newInstallmentCount, setNewInstallmentCount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(1);
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [notes, setNotes] = useState("");
   const [preview, setPreview] = useState<LoanRecalculationPreview | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const currency = currencyLabels[detail.loan.currency];
-  const payload = { mode, effectiveDate };
+  const previewPayload = {
+    mode,
+    effectiveDate,
+    amount: Number(amount),
+    newInstallmentCount: mode === 3 ? Number(newInstallmentCount) : null
+  };
+  const validationTitle = /cuotas vencidas|cuota parcialmente pagada|mora pendiente/i.test(error)
+    ? "Primero regulariza el préstamo"
+    : "Revisa los datos del abono";
+
+  function invalidatePreview() {
+    setPreview(null);
+    setError("");
+  }
 
   async function loadPreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       setLoading(true);
       setError("");
-      setPreview(await api.previewLoanRecalculation(detail.loan.id, payload));
+      setPreview(await api.previewExtraordinaryPayment(detail.loan.id, previewPayload));
     } catch (err) {
       setPreview(null);
       setError(err instanceof Error ? err.message : "No se pudo calcular la vista previa.");
@@ -2553,14 +2453,19 @@ function LoanRecalculationDialog({
     }
   }
 
-  async function applyRecalculation() {
+  async function applyExtraordinaryPayment() {
     try {
       setLoading(true);
       setError("");
-      const updatedDetail = await api.recalculateLoan(detail.loan.id, payload);
+      const updatedDetail = await api.registerExtraordinaryPayment(detail.loan.id, {
+        ...previewPayload,
+        paymentMethod,
+        referenceNumber: referenceNumber.trim() || null,
+        notes: notes.trim() || null
+      });
       await onApplied(updatedDetail);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo recalcular el préstamo.");
+      setError(err instanceof Error ? err.message : "No se pudo registrar el abono extraordinario.");
     } finally {
       setLoading(false);
     }
@@ -2570,57 +2475,145 @@ function LoanRecalculationDialog({
     <div className="modal-backdrop" role="presentation" onMouseDown={() => !loading && onClose()}>
       <div className="recalculation-modal" role="dialog" aria-modal="true" aria-labelledby="recalculation-title" onMouseDown={(event) => event.stopPropagation()}>
         <div>
-          <span className="eyebrow">Reestructuración</span>
-          <h2 id="recalculation-title">Recalcular cuotas de {loanDisplayName(detail.loan)}</h2>
-          <p className="muted">Se conservarán las cuotas pagadas. El nuevo plan se calculará únicamente sobre el capital pendiente.</p>
+          <span className="eyebrow">Abono a capital</span>
+          <h2 id="recalculation-title">Abono extraordinario de {loanDisplayName(detail.loan)}</h2>
+          <p className="muted">El dinero se registra como pago a capital. Las cuotas pagadas se conservan y solo se reemplaza el plan futuro.</p>
         </div>
+        {error && (
+          <div className="recalculation-validation" role="alert">
+            <span className="recalculation-validation-icon" aria-hidden="true">!</span>
+            <div>
+              <strong>{validationTitle}</strong>
+              <p>{error}</p>
+            </div>
+          </div>
+        )}
         <form className="recalculation-form" onSubmit={loadPreview}>
           <label className="field-label">
-            Modalidad
-            <select
-              value={mode}
+            Monto del abono
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={amount}
               onChange={(event) => {
-                setMode(Number(event.target.value) as 1 | 2);
-                setPreview(null);
+                setAmount(event.target.value);
+                invalidatePreview();
               }}
-            >
-              <option value={1}>Reducir el monto de las cuotas</option>
-              <option value={2}>Mantener la cuota y reducir el plazo</option>
-            </select>
+              placeholder="Ej. 1000"
+              required
+            />
           </label>
           <label className="field-label">
-            Fecha efectiva
+            Fecha del abono
             <input
               type="date"
               value={effectiveDate}
               max={dateInputValue()}
               onChange={(event) => {
                 setEffectiveDate(event.target.value);
-                setPreview(null);
+                invalidatePreview();
               }}
               required
             />
           </label>
-          <p className="recalculation-rule span-2">El préstamo debe estar al día, sin cuotas parciales, vencidas ni mora pendiente.</p>
-          <div className="form-actions span-2">
+          <label className="field-label">
+            Método de pago
+            <select value={paymentMethod} onChange={(event) => {
+              setPaymentMethod(Number(event.target.value));
+              setError("");
+            }}>
+              <option value={1}>Efectivo</option>
+              <option value={2}>Transferencia</option>
+              <option value={3}>Depósito</option>
+              <option value={4}>Otro</option>
+            </select>
+          </label>
+          <label className="field-label span-2">
+            Modalidad del nuevo plan
+            <span className="recalculation-mode-input-row">
+              <select
+                value={mode}
+                onChange={(event) => {
+                  setMode(Number(event.target.value) as 1 | 2 | 3);
+                  invalidatePreview();
+                }}
+              >
+                <option value={1}>Reducir cuota y conservar pagos restantes</option>
+                <option value={2}>Conservar cuota aproximada y reducir pagos</option>
+                <option value={3}>Elegir una nueva cantidad de pagos</option>
+              </select>
+              <InfoTooltip
+                ariaLabel="Información sobre las modalidades del nuevo plan"
+                text={(
+                  <span className="recalculation-mode-help">
+                    <span><strong>Reducir cuota:</strong> conserva la cantidad de pagos restantes y calcula una cuota menor.</span>
+                    <span><strong>Reducir pagos:</strong> mantiene una cuota aproximada a la actual y termina el préstamo antes.</span>
+                    <span><strong>Elegir cantidad:</strong> permite definir los pagos. Menos pagos elevan la cuota y suelen reducir el interés; más pagos bajan la cuota, pero pueden aumentar el interés total.</span>
+                  </span>
+                )}
+              />
+            </span>
+          </label>
+          <label className="field-label">
+            Referencia
+            <input
+              value={referenceNumber}
+              onChange={(event) => {
+                setReferenceNumber(event.target.value);
+                setError("");
+              }}
+              placeholder={paymentMethod === 2 || paymentMethod === 3 ? "Obligatoria" : "Opcional"}
+              required={paymentMethod === 2 || paymentMethod === 3}
+            />
+          </label>
+          {mode === 3 && (
+            <label className="field-label">
+              Nueva cantidad de pagos
+              <input
+                type="number"
+                min="1"
+                max="120"
+                step="1"
+                value={newInstallmentCount}
+                onChange={(event) => {
+                  setNewInstallmentCount(event.target.value);
+                  invalidatePreview();
+                }}
+                required
+              />
+            </label>
+          )}
+          <label className={`field-label ${mode === 3 ? "span-2" : "span-3"}`}>
+            Observaciones
+            <textarea value={notes} onChange={(event) => {
+              setNotes(event.target.value);
+              setError("");
+            }} placeholder="Motivo u observaciones opcionales" />
+          </label>
+          <p className="recalculation-rule span-3">El préstamo debe estar al día, sin cuotas parciales, vencidas ni mora pendiente.</p>
+          <div className="form-actions span-3">
             <button type="button" className="ghost" onClick={onClose} disabled={loading}>Cerrar</button>
             <button type="submit" disabled={loading}>{loading ? "Calculando..." : "Calcular vista previa"}</button>
           </div>
         </form>
-        {error && <p className="form-error">{error}</p>}
         {preview && (
           <div className="recalculation-preview">
-            <div><span>Capital pendiente</span><strong>{money(preview.outstandingPrincipal, currency)}</strong></div>
+            <div><span>Capital antes del abono</span><strong>{money(preview.outstandingPrincipal, currency)}</strong></div>
+            <div><span>Abono a capital</span><strong>{money(preview.extraordinaryPaymentAmount, currency)}</strong></div>
+            <div><span>Capital después del abono</span><strong>{money(preview.principalAfterPayment, currency)}</strong></div>
             <div><span>Cuota actual</span><strong>{money(preview.currentInstallmentAmount, currency)}</strong></div>
             <div><span>Nueva cuota</span><strong>{money(preview.newInstallmentAmount, currency)}</strong></div>
             <div><span>Pagos restantes</span><strong>{preview.currentRemainingInstallments} → {preview.newRemainingInstallments}</strong></div>
-            <div><span>Interés nuevo</span><strong>{money(preview.newInterest, currency)}</strong></div>
+            <div><span>Interés pendiente actual</span><strong>{money(preview.currentPendingInterest, currency)}</strong></div>
+            <div><span>Nuevo interés</span><strong>{money(preview.newInterest, currency)}</strong></div>
+            <div><span>{preview.interestSavings >= 0 ? "Ahorro de interés" : "Aumento de interés"}</span><strong>{money(Math.abs(preview.interestSavings), currency)}</strong></div>
             <div><span>Nuevo pendiente</span><strong>{money(preview.newPendingTotal, currency)}</strong></div>
-            <div className="span-2"><span>Primera cuota del nuevo plan</span><strong>{dateOnly(preview.firstDueDate)}</strong></div>
-            <div className="recalculation-confirm span-2">
-              <p>Al confirmar se reemplazarán únicamente las cuotas futuras.</p>
-              <button type="button" onClick={() => void applyRecalculation()} disabled={loading}>
-                {loading ? "Recalculando..." : "Confirmar nuevo plan"}
+            <div className="span-3"><span>Primera cuota del nuevo plan</span><strong>{dateOnly(preview.firstDueDate)}</strong></div>
+            <div className="recalculation-confirm span-3">
+              <p>Al confirmar se registrará el abono y se reemplazarán únicamente las cuotas futuras.</p>
+              <button type="button" onClick={() => void applyExtraordinaryPayment()} disabled={loading}>
+                {loading ? "Registrando..." : "Confirmar abono y nuevo plan"}
               </button>
             </div>
           </div>

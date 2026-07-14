@@ -9,11 +9,21 @@ public sealed record PaymentDto(
     Guid? LoanChargeId,
     DateTime PaymentDate,
     decimal AmountPaid,
+    PaymentType Type,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,
     string? Notes,
     Guid? ReceiptId,
-    string? ReceiptFileName);
+    string? ReceiptFileName,
+    LoanRecalculationMode? RecalculationMode,
+    decimal? PreviousOutstandingPrincipal,
+    decimal? NewOutstandingPrincipal,
+    decimal? PreviousInstallmentAmount,
+    decimal? NewInstallmentAmount,
+    int? PreviousInstallmentCount,
+    int? NewInstallmentCount,
+    decimal? PreviousPendingInterest,
+    decimal? NewPendingInterest);
 
 public sealed record RegisterPaymentRequest(
     Guid LoanId,

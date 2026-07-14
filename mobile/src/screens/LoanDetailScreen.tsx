@@ -3,11 +3,11 @@ import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, GhostButton, Screen, Text } from "../components/ui";
+import { Card, EmptyState, ErrorText, GhostButton, InfoTooltip, Screen, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
-import { currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
+import { canMakeExtraordinaryPayment, currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
 import { shareLoanAgreement, shareLoanPaymentPlan } from "../utils/loanDocuments";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanDetail">;
@@ -35,6 +35,15 @@ export function LoanDetailScreen({ route, navigation }: Props) {
   }, [load]));
 
   const currency = detail ? currencyLabels[detail.loan.currency] : "C$";
+  const lateFeeExplanation = detail?.loan.lateFeeDescription
+    ? lateFeePolicyText(
+      detail.loan.paymentFrequency,
+      detail.loan.principalAmount,
+      detail.loan.monthlyInterestRate,
+      Number(detail.loan.lateFeeDescription.replace("%", "")) || 50,
+      currency,
+      detail.loan.termMonths)
+    : "";
 
   async function shareDocument(type: "pdf" | "agreement") {
     if (!detail) return;
@@ -65,20 +74,31 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               <Text style={styles.total}>Total: {money(detail.loan.totalToPay, currency)}</Text>
               <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
               <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
-              {detail.loan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {detail.loan.lateFeeDescription}. {lateFeePolicyText(detail.loan.paymentFrequency, detail.loan.principalAmount, detail.loan.monthlyInterestRate, Number(detail.loan.lateFeeDescription.replace("%", "")) || 50, currency, detail.loan.termMonths)}</Text> : null}
-              {detail.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(detail.loan.lateFeesPending, currency)}</Text> : null}
-              <View style={styles.documentActions}>
-                <GhostButton title={documentAction === "pdf" ? "Generando..." : "Tabla PDF"} onPress={() => void shareDocument("pdf")} />
-                <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Acuerdo Word"} onPress={() => void shareDocument("agreement")} />
-              </View>
-              {detail.loan.status !== 2 ? (
-                <View style={styles.action}>
-                  <GhostButton title="Registrar pago" onPress={() => navigation.navigate("Payments", { loan: detail.loan })} />
-                  {detail.installments.some((installment) => installment.amountPaid >= installment.paymentAmount) && detail.loan.pendingBalance > 0 ? (
-                    <GhostButton title="Recalcular cuotas" onPress={() => navigation.navigate("LoanRecalculation", { loanId: detail.loan.id })} />
-                  ) : null}
+              {detail.loan.lateFeeDescription ? (
+                <View style={styles.lateFeeSummary}>
+                  <Text style={styles.muted}>Mora configurada: {detail.loan.lateFeeDescription}</Text>
+                  <InfoTooltip title="Cómo se calcula la mora" message={lateFeeExplanation} />
                 </View>
               ) : null}
+              {detail.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(detail.loan.lateFeesPending, currency)}</Text> : null}
+              <View style={styles.actionGrid}>
+                <View style={styles.actionCell}>
+                  <GhostButton title={documentAction === "pdf" ? "Generando..." : "Descargar PDF"} onPress={() => void shareDocument("pdf")} />
+                </View>
+                <View style={styles.actionCell}>
+                  <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Descargar acuerdo"} onPress={() => void shareDocument("agreement")} />
+                </View>
+                {detail.loan.status !== 2 ? (
+                  <View style={styles.actionCell}>
+                    <GhostButton title="Registrar pago" onPress={() => navigation.navigate("Payments", { loan: detail.loan })} />
+                  </View>
+                ) : null}
+                {canMakeExtraordinaryPayment(detail) ? (
+                  <View style={styles.actionCell}>
+                    <GhostButton title="Abono extraordinario" onPress={() => navigation.navigate("LoanRecalculation", { loanId: detail.loan.id })} />
+                  </View>
+                ) : null}
+              </View>
             </Card>
 
             <Card title="Tabla de pagos">
@@ -152,15 +172,22 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 4
   },
-  action: {
-    gap: spacing.sm,
-    marginTop: spacing.md
+  lateFeeSummary: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    marginTop: 4
   },
-  documentActions: {
+  actionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.md
+  },
+  actionCell: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    minWidth: 138
   },
   item: {
     borderBottomColor: colors.border,

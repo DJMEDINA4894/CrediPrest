@@ -145,6 +145,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .HasForeignKey(payment => payment.ReceiptId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(payment => payment.AmountPaid).HasPrecision(18, 2);
+            entity.Property(payment => payment.Type).HasDefaultValue(PaymentType.Regular);
+            entity.Property(payment => payment.PreviousOutstandingPrincipal).HasPrecision(18, 2);
+            entity.Property(payment => payment.NewOutstandingPrincipal).HasPrecision(18, 2);
+            entity.Property(payment => payment.PreviousInstallmentAmount).HasPrecision(18, 2);
+            entity.Property(payment => payment.NewInstallmentAmount).HasPrecision(18, 2);
+            entity.Property(payment => payment.PreviousPendingInterest).HasPrecision(18, 2);
+            entity.Property(payment => payment.NewPendingInterest).HasPrecision(18, 2);
             entity.Property(payment => payment.ReferenceNumber).HasMaxLength(120);
             entity.Property(payment => payment.Notes).HasMaxLength(1200);
         });

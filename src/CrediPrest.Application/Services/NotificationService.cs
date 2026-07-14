@@ -31,9 +31,14 @@ internal sealed class NotificationService(
         var charges = await dbContext.LoanCharges
             .Where(charge => relatedEntityIds.Contains(charge.Id))
             .ToDictionaryAsync(charge => charge.Id, cancellationToken);
+        var relatedLoanIds = (await dbContext.Loans
+            .Where(loan => relatedEntityIds.Contains(loan.Id))
+            .Select(loan => loan.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
 
         return notifications
-            .OrderBy(notification => GetRelatedDate(notification, installments, charges))
+            .OrderBy(notification => GetRelatedDate(notification, installments, charges, relatedLoanIds))
             .ThenBy(notification => notification.IsRead)
             .ThenByDescending(notification => notification.CreatedAtUtc)
             .Take(50)
@@ -49,7 +54,7 @@ internal sealed class NotificationService(
                     notification.IsRead,
                     notification.CreatedAtUtc,
                     notification.RelatedEntityId,
-                    installment?.LoanId ?? charge?.LoanId,
+                    installment?.LoanId ?? charge?.LoanId ?? (relatedLoanIds.Contains(notification.RelatedEntityId) ? notification.RelatedEntityId : null),
                     installment?.DueDate ?? charge?.PeriodEndDate);
             })
             .ToList();
@@ -263,8 +268,15 @@ internal sealed class NotificationService(
 
         if (existing is not null)
         {
+            var contentChanged = existing.Title != title || existing.Message != message;
             existing.Title = title;
             existing.Message = message;
+            if (contentChanged)
+            {
+                existing.IsRead = false;
+                existing.ReadAtUtc = null;
+                existing.CreatedAtUtc = DateTime.UtcNow;
+            }
             return;
         }
 
@@ -303,11 +315,14 @@ internal sealed class NotificationService(
     private static DateTime GetRelatedDate(
         Notification notification,
         IReadOnlyDictionary<Guid, Installment> installments,
-        IReadOnlyDictionary<Guid, LoanCharge> charges)
+        IReadOnlyDictionary<Guid, LoanCharge> charges,
+        IReadOnlySet<Guid> loanIds)
         => installments.TryGetValue(notification.RelatedEntityId, out var installment)
             ? installment.DueDate
             : charges.TryGetValue(notification.RelatedEntityId, out var charge)
                 ? charge.PeriodEndDate
+                : loanIds.Contains(notification.RelatedEntityId)
+                    ? notification.CreatedAtUtc
                 : DateTime.MaxValue;
 
     private static string FormatMoney(decimal amount, CurrencyType currency)

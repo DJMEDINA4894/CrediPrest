@@ -110,13 +110,23 @@ export const api = {
   deleteClient: (id: string) => request<void>(`/clients/${id}`, { method: "DELETE" }),
   loans: () => request<Loan[]>("/loans"),
   loanDetail: (id: string) => request<LoanDetail>(`/loans/${id}`),
+  loanPaymentTable: async (id: string) => {
+    try {
+      return await requestBlob(`/loans/${id}/payment-plan.pdf`);
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.statusCode === 403) {
+        return requestBlob(`/client-portal/payment-plans/${id}/pdf`);
+      }
+      throw error;
+    }
+  },
   loanAgreement: (id: string) => requestBlob(`/loans/${id}/agreement`),
   createLoan: (payload: unknown) => request<LoanDetail>("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (id: string, payload: unknown) => request<LoanDetail>(`/loans/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  previewLoanRecalculation: (id: string, payload: unknown) =>
-    request<LoanRecalculationPreview>(`/loans/${id}/recalculation/preview`, { method: "POST", body: JSON.stringify(payload) }),
-  recalculateLoan: (id: string, payload: unknown) =>
-    request<LoanDetail>(`/loans/${id}/recalculate`, { method: "POST", body: JSON.stringify(payload) }),
+  previewExtraordinaryPayment: (id: string, payload: unknown) =>
+    request<LoanRecalculationPreview>(`/loans/${id}/extraordinary-payment/preview`, { method: "POST", body: JSON.stringify(payload) }),
+  registerExtraordinaryPayment: (id: string, payload: unknown) =>
+    request<LoanDetail>(`/loans/${id}/extraordinary-payment`, { method: "POST", body: JSON.stringify(payload) }),
   cancelLoan: (id: string) => request<void>(`/loans/${id}/cancel`, { method: "POST" }),
   deleteLoan: (id: string) => request<void>(`/loans/${id}`, { method: "DELETE" }),
   payments: (loanId: string) => request<Payment[]>(`/loans/${loanId}/payments`),

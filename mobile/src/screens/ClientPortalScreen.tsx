@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Metric, Screen, SecondaryButton, Text } from "../components/ui";
+import { Card, EmptyState, ErrorText, InfoTooltip, Metric, Screen, SecondaryButton, Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -10,6 +10,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
 import { currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
+import { shareLoanPaymentPlan } from "../utils/loanDocuments";
 
 export function ClientPortalScreen() {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export function ClientPortalScreen() {
   const [plans, setPlans] = useState<LoanDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [downloadingLoanId, setDownloadingLoanId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -36,6 +38,18 @@ export function ClientPortalScreen() {
 
   const pendingCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
   const pendingUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
+
+  async function downloadPlan(plan: LoanDetail) {
+    try {
+      setError("");
+      setDownloadingLoanId(plan.loan.id);
+      await shareLoanPaymentPlan(plan, true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo descargar la tabla de pagos.");
+    } finally {
+      setDownloadingLoanId(null);
+    }
+  }
 
   return (
     <Screen>
@@ -59,8 +73,22 @@ export function ClientPortalScreen() {
           return (
             <Card key={plan.loan.id} title={plan.loan.referenceName ?? "Prestamo"}>
               <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
-              {plan.loan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}. {lateFeePolicyText(plan.loan.paymentFrequency, plan.loan.principalAmount, plan.loan.monthlyInterestRate, Number(plan.loan.lateFeeDescription.replace("%", "")) || 50, currencyLabels[plan.loan.currency], plan.loan.termMonths)}</Text> : null}
+              {plan.loan.lateFeeDescription ? (
+                <View style={styles.lateFeeSummary}>
+                  <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}</Text>
+                  <InfoTooltip
+                    title="Cómo se calcula la mora"
+                    message={lateFeePolicyText(plan.loan.paymentFrequency, plan.loan.principalAmount, plan.loan.monthlyInterestRate, Number(plan.loan.lateFeeDescription.replace("%", "")) || 50, currencyLabels[plan.loan.currency], plan.loan.termMonths)}
+                  />
+                </View>
+              ) : null}
               {plan.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(plan.loan.lateFeesPending, currency)}</Text> : null}
+              <View style={styles.documentAction}>
+                <SecondaryButton
+                  title={downloadingLoanId === plan.loan.id ? "Descargando..." : "Descargar tabla PDF"}
+                  onPress={() => void downloadPlan(plan)}
+                />
+              </View>
               {plan.installments.map((installment) => {
                 const mora = lateFeeAllocation(plan, installment);
                 const pending = installmentPendingAmount(installment) + mora.pendingAmount;
@@ -146,6 +174,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 3
   },
+  lateFeeSummary: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    marginTop: 4
+  },
   pending: {
     color: colors.warn,
     fontWeight: "900",
@@ -156,5 +190,8 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     marginTop: spacing.md,
     padding: spacing.sm
+  },
+  documentAction: {
+    marginTop: spacing.md
   }
 });

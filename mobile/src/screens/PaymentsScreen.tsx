@@ -4,7 +4,7 @@ import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet,
 import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
+import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { Loan, Payment } from "../types/models";
@@ -187,7 +187,15 @@ export function PaymentsScreen({ route, navigation }: Props) {
               <Text style={styles.loanName}>{selectedLoan.clientName}</Text>
               {selectedLoan.referenceName ? <Text style={styles.muted}>{selectedLoan.referenceName}</Text> : null}
               <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
-              {selectedLoan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {selectedLoan.lateFeeDescription}. {lateFeePolicyText(selectedLoan.paymentFrequency, selectedLoan.principalAmount, selectedLoan.monthlyInterestRate, Number(selectedLoan.lateFeeDescription.replace("%", "")) || 50, currency, selectedLoan.termMonths)}</Text> : null}
+              {selectedLoan.lateFeeDescription ? (
+                <View style={styles.lateFeeSummary}>
+                  <Text style={styles.muted}>Mora configurada: {selectedLoan.lateFeeDescription}</Text>
+                  <InfoTooltip
+                    title="Cómo se calcula la mora"
+                    message={lateFeePolicyText(selectedLoan.paymentFrequency, selectedLoan.principalAmount, selectedLoan.monthlyInterestRate, Number(selectedLoan.lateFeeDescription.replace("%", "")) || 50, currency, selectedLoan.termMonths)}
+                  />
+                </View>
+              ) : null}
               {selectedLoan.lateFeesPending > 0 ? <Text style={styles.late}>Mora: {money(selectedLoan.lateFeesPending, currency)}</Text> : null}
             </>
           ) : (
@@ -250,8 +258,21 @@ export function PaymentsScreen({ route, navigation }: Props) {
                     <Text style={styles.paymentAmount}>{money(payment.amountPaid, currency)}</Text>
                     <Text style={styles.muted}>{dateOnly(payment.paymentDate)} · {paymentMethodLabels[payment.paymentMethod]}</Text>
                   </View>
-                  {payment.receiptId ? <Text style={styles.receiptBadge}>Comprobante</Text> : null}
+                  {payment.type === 2 ? <Text style={styles.extraordinaryBadge}>Abono extraordinario</Text> : payment.receiptId ? <Text style={styles.receiptBadge}>Comprobante</Text> : null}
                 </View>
+                {payment.type === 2 ? (
+                  <View style={styles.extraordinarySummary}>
+                    {payment.previousOutstandingPrincipal != null && payment.newOutstandingPrincipal != null ? (
+                      <Text style={styles.muted}>Capital: {money(payment.previousOutstandingPrincipal, currency)} → {money(payment.newOutstandingPrincipal, currency)}</Text>
+                    ) : null}
+                    {payment.previousInstallmentAmount != null && payment.newInstallmentAmount != null ? (
+                      <Text style={styles.muted}>Cuota: {money(payment.previousInstallmentAmount, currency)} → {money(payment.newInstallmentAmount, currency)}</Text>
+                    ) : null}
+                    {payment.previousInstallmentCount != null && payment.newInstallmentCount != null ? (
+                      <Text style={styles.muted}>Pagos restantes: {payment.previousInstallmentCount} → {payment.newInstallmentCount}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
                 {payment.referenceNumber ? <Text style={styles.muted}>Referencia: {payment.referenceNumber}</Text> : null}
                 {payment.notes ? <Text style={styles.muted}>{payment.notes}</Text> : null}
                 {payment.receiptId ? (
@@ -302,6 +323,13 @@ const styles = StyleSheet.create({
   late: {
     color: colors.danger,
     fontWeight: "900",
+    marginTop: 4
+  },
+  lateFeeSummary: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
     marginTop: 4
   },
   label: {
@@ -400,6 +428,21 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     paddingHorizontal: 8,
     paddingVertical: 4
+  },
+  extraordinaryBadge: {
+    backgroundColor: "#dff5ea",
+    borderRadius: 999,
+    color: colors.good,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4
+  },
+  extraordinarySummary: {
+    backgroundColor: colors.soft,
+    borderRadius: 8,
+    marginTop: spacing.sm,
+    padding: spacing.sm
   },
   receiptLink: {
     alignItems: "center",

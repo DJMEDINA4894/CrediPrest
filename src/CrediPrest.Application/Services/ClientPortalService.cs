@@ -20,4 +20,18 @@ internal sealed class ClientPortalService(IApplicationDbContext dbContext) : ICl
 
         return loans.Select(loan => loan.ToDetailDto()).ToList();
     }
+
+    public async Task<LoanDetailDto> GetPaymentPlanAsync(Guid clientId, Guid loanId, CancellationToken cancellationToken = default)
+    {
+        var loan = await dbContext.Loans
+            .Include(item => item.Client)
+            .Include(item => item.LenderUser)
+            .Include(item => item.Installments)
+            .Include(item => item.Payments)
+            .Include(item => item.Charges)
+            .SingleOrDefaultAsync(item => item.Id == loanId && item.ClientId == clientId && item.Client.IsActive, cancellationToken)
+            ?? throw new KeyNotFoundException("No se encontró el préstamo solicitado.");
+
+        return loan.ToDetailDto();
+    }
 }

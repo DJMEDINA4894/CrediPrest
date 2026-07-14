@@ -91,9 +91,20 @@ public sealed record UpdateLoanRequest(
     string? AgreementCity,
     string? LateFeeDescription);
 
-public sealed record RecalculateLoanRequest(
+public sealed record ExtraordinaryPaymentPreviewRequest(
     LoanRecalculationMode Mode,
-    DateTime EffectiveDate);
+    DateTime EffectiveDate,
+    decimal Amount,
+    int? NewInstallmentCount);
+
+public sealed record RegisterExtraordinaryPaymentRequest(
+    LoanRecalculationMode Mode,
+    DateTime EffectiveDate,
+    decimal Amount,
+    int? NewInstallmentCount,
+    PaymentMethod PaymentMethod,
+    string? ReferenceNumber,
+    string? Notes);
 
 public sealed record LoanRecalculationPreviewDto(
     Guid LoanId,
@@ -101,10 +112,14 @@ public sealed record LoanRecalculationPreviewDto(
     DateTime EffectiveDate,
     DateTime FirstDueDate,
     decimal OutstandingPrincipal,
+    decimal ExtraordinaryPaymentAmount,
+    decimal PrincipalAfterPayment,
     decimal CurrentInstallmentAmount,
     decimal NewInstallmentAmount,
     int PaidInstallments,
     int CurrentRemainingInstallments,
     int NewRemainingInstallments,
+    decimal CurrentPendingInterest,
     decimal NewInterest,
+    decimal InterestSavings,
     decimal NewPendingTotal);
