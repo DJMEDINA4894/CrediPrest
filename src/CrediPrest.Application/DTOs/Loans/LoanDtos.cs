@@ -23,7 +23,15 @@ public sealed record LoanChargeDto(
     decimal Amount,
     decimal AmountPaid,
     decimal PendingAmount,
-    string? Notes);
+    string? Notes,
+    DateTime CalculatedAtUtc,
+    IReadOnlyList<LoanChargeAllocationDto> Allocations);
+
+public sealed record LoanChargeAllocationDto(
+    Guid InstallmentId,
+    decimal Amount,
+    decimal AmountPaid,
+    decimal PendingAmount);
 
 public sealed record LoanDto(
     Guid Id,
@@ -82,3 +90,21 @@ public sealed record UpdateLoanRequest(
     string? Notes,
     string? AgreementCity,
     string? LateFeeDescription);
+
+public sealed record RecalculateLoanRequest(
+    LoanRecalculationMode Mode,
+    DateTime EffectiveDate);
+
+public sealed record LoanRecalculationPreviewDto(
+    Guid LoanId,
+    LoanRecalculationMode Mode,
+    DateTime EffectiveDate,
+    DateTime FirstDueDate,
+    decimal OutstandingPrincipal,
+    decimal CurrentInstallmentAmount,
+    decimal NewInstallmentAmount,
+    int PaidInstallments,
+    int CurrentRemainingInstallments,
+    int NewRemainingInstallments,
+    decimal NewInterest,
+    decimal NewPendingTotal);

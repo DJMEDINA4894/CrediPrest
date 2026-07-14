@@ -30,7 +30,7 @@ export function DashboardScreen() {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
         {dashboard ? (
           <>
@@ -72,6 +72,9 @@ export function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   metrics: {
     flexDirection: "row",
     flexWrap: "wrap",

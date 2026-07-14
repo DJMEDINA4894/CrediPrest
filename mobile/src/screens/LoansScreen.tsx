@@ -1,9 +1,9 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, GhostButton, PrimaryButton, Screen } from "../components/ui";
+import { Card, DangerButton, EmptyState, ErrorText, GhostButton, PrimaryButton, Screen, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { Loan } from "../types/models";
@@ -70,9 +70,11 @@ export function LoansScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
-        <PrimaryButton title="Nuevo prestamo" onPress={() => navigation.navigate("LoanForm")} />
+        <View style={styles.createAction}>
+          <PrimaryButton title="Nuevo prestamo" onPress={() => navigation.navigate("LoanForm")} />
+        </View>
         {loans.length === 0 ? <EmptyState text="No hay prestamos registrados." /> : null}
         {loans.map((loan) => (
           <Card key={loan.id}>
@@ -94,7 +96,7 @@ export function LoansScreen({ navigation }: Props) {
               {loan.status !== 2 ? <GhostButton title="Editar" onPress={() => navigation.navigate("LoanForm", { loan })} /> : null}
               {loan.status !== 2 ? <GhostButton title="Pagar" onPress={() => navigation.navigate("Payments", { loan })} /> : null}
               {loan.status !== 2 ? <GhostButton title="Cancelar" onPress={() => confirmCancel(loan)} /> : null}
-              <GhostButton title="Eliminar" onPress={() => deleteLoan(loan)} />
+              <DangerButton title="Eliminar" onPress={() => deleteLoan(loan)} />
             </View>
           </Card>
         ))}
@@ -104,6 +106,9 @@ export function LoansScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   row: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -157,5 +162,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  createAction: {
+    marginBottom: spacing.md
   }
 });

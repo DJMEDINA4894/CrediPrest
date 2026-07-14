@@ -1,20 +1,22 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen, SelectField } from "../components/ui";
+import { Card, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
-import type { Loan } from "../types/models";
-import { currencyLabels, dateInputValue, money } from "../utils/format";
+import type { Loan, Payment } from "../types/models";
+import { currencyLabels, dateInputValue, dateOnly, lateFeePolicyText, money } from "../utils/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Payments">;
 
 export function PaymentsScreen({ route, navigation }: Props) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(route.params?.loan ?? null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
   const [paymentDate, setPaymentDate] = useState(dateInputValue());
   const [amountPaid, setAmountPaid] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -25,23 +27,12 @@ export function PaymentsScreen({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    try {
-      setError("");
-      setLoading(true);
-      setLoans((await api.loans()).filter((loan) => loan.status !== 2));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudieron cargar los prestamos.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const selectLoan = useCallback(async (loan: Loan) => {
     setSelectedLoan(loan);
 
     try {
-      const detail = await api.loanDetail(loan.id);
+      const [detail, loanPayments] = await Promise.all([api.loanDetail(loan.id), api.payments(loan.id)]);
+      setPayments([...loanPayments].sort((left, right) => right.paymentDate.localeCompare(left.paymentDate)));
       const orderedInstallments = [...detail.installments]
         .filter((installment) => installment.status !== 3)
         .sort((left, right) => dateInputValue(left.dueDate).localeCompare(dateInputValue(right.dueDate)));
@@ -57,12 +48,26 @@ export function PaymentsScreen({ route, navigation }: Props) {
     }
   }, []);
 
+  const load = useCallback(async () => {
+    try {
+      setError("");
+      setLoading(true);
+      const activeLoans = (await api.loans()).filter((loan) => loan.status !== 2);
+      setLoans(activeLoans);
+      const preferredLoan = route.params?.loan ?? activeLoans.find((loan) => loan.id === route.params?.loanId);
+      if (preferredLoan) {
+        await selectLoan(preferredLoan);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudieron cargar los prestamos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [route.params?.loan, route.params?.loanId, selectLoan]);
+
   useFocusEffect(useCallback(() => {
     void load();
-    if (route.params?.loan) {
-      void selectLoan(route.params.loan);
-    }
-  }, [load, route.params?.loan, selectLoan]));
+  }, [load]));
 
   async function submit() {
     if (!selectedLoan) {
@@ -156,6 +161,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
 
   const currency = selectedLoan ? currencyLabels[selectedLoan.currency] : "C$";
   const needsReceipt = paymentMethod === 2 || paymentMethod === 3;
+  const paymentMethodLabels = { 1: "Efectivo", 2: "Transferencia", 3: "Depósito", 4: "Otro" } as const;
   const loanOptions = loans.map((loan) => ({
     value: loan.id,
     label: `${loan.clientName}${loan.referenceName ? ` - ${loan.referenceName}` : ""} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}`
@@ -163,7 +169,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
         <SelectField
           label="Prestamo activo"
@@ -181,6 +187,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
               <Text style={styles.loanName}>{selectedLoan.clientName}</Text>
               {selectedLoan.referenceName ? <Text style={styles.muted}>{selectedLoan.referenceName}</Text> : null}
               <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
+              {selectedLoan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {selectedLoan.lateFeeDescription}. {lateFeePolicyText(selectedLoan.paymentFrequency, selectedLoan.principalAmount, selectedLoan.monthlyInterestRate, Number(selectedLoan.lateFeeDescription.replace("%", "")) || 50, currency, selectedLoan.termMonths)}</Text> : null}
               {selectedLoan.lateFeesPending > 0 ? <Text style={styles.late}>Mora: {money(selectedLoan.lateFeesPending, currency)}</Text> : null}
             </>
           ) : (
@@ -233,13 +240,51 @@ export function PaymentsScreen({ route, navigation }: Props) {
           <Text style={styles.hint}>El pago se aplica primero a cuotas vencidas, luego a mora pendiente y despues a cuotas actuales.</Text>
         </Card>
 
+        {selectedLoan ? (
+          <Card title={`Historial de pagos (${payments.length})`}>
+            {payments.length === 0 ? <EmptyState text="Este préstamo todavía no tiene pagos registrados." /> : null}
+            {payments.map((payment) => (
+              <View key={payment.id} style={styles.paymentItem}>
+                <View style={styles.paymentHeader}>
+                  <View style={styles.paymentMain}>
+                    <Text style={styles.paymentAmount}>{money(payment.amountPaid, currency)}</Text>
+                    <Text style={styles.muted}>{dateOnly(payment.paymentDate)} · {paymentMethodLabels[payment.paymentMethod]}</Text>
+                  </View>
+                  {payment.receiptId ? <Text style={styles.receiptBadge}>Comprobante</Text> : null}
+                </View>
+                {payment.referenceNumber ? <Text style={styles.muted}>Referencia: {payment.referenceNumber}</Text> : null}
+                {payment.notes ? <Text style={styles.muted}>{payment.notes}</Text> : null}
+                {payment.receiptId ? (
+                  <Pressable accessibilityRole="button" onPress={() => setSelectedReceiptId(payment.receiptId ?? null)} style={styles.receiptLink}>
+                    <Image source={api.paymentReceiptSource(payment.receiptId)} style={styles.paymentReceipt} />
+                    <Text style={styles.receiptLinkText}>Ver comprobante</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
         {loans.length === 0 ? <EmptyState text="No hay prestamos activos." /> : null}
       </ScrollView>
+
+      <Modal animationType="fade" transparent visible={Boolean(selectedReceiptId)} onRequestClose={() => setSelectedReceiptId(null)}>
+        <Pressable onPress={() => setSelectedReceiptId(null)} style={styles.receiptModalOverlay}>
+          <View style={styles.receiptModalCard}>
+            <Text style={styles.receiptModalTitle}>Comprobante de pago</Text>
+            {selectedReceiptId ? <Image resizeMode="contain" source={api.paymentReceiptSource(selectedReceiptId)} style={styles.receiptModalImage} /> : null}
+            <GhostButton title="Cerrar" onPress={() => setSelectedReceiptId(null)} />
+          </View>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   loanName: {
     color: colors.text,
     fontSize: 17,
@@ -327,5 +372,77 @@ const styles = StyleSheet.create({
   receiptName: {
     color: colors.text,
     fontWeight: "800"
+  },
+  paymentItem: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: 1,
+    paddingVertical: spacing.md
+  },
+  paymentHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between"
+  },
+  paymentMain: {
+    flex: 1
+  },
+  paymentAmount: {
+    color: colors.good,
+    fontSize: 17,
+    fontWeight: "900"
+  },
+  receiptBadge: {
+    backgroundColor: colors.soft,
+    borderRadius: 999,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  receiptLink: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm
+  },
+  paymentReceipt: {
+    backgroundColor: colors.soft,
+    borderRadius: 6,
+    height: 48,
+    width: 48
+  },
+  receiptLinkText: {
+    color: colors.primary,
+    fontWeight: "900"
+  },
+  receiptModalOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 34, 50, 0.72)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  receiptModalCard: {
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    maxHeight: "86%",
+    padding: spacing.md,
+    width: "100%"
+  },
+  receiptModalTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: spacing.md
+  },
+  receiptModalImage: {
+    backgroundColor: colors.soft,
+    borderRadius: 8,
+    height: 430,
+    marginBottom: spacing.md,
+    width: "100%"
   }
 });

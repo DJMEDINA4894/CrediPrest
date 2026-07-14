@@ -90,12 +90,36 @@ export interface LoanCharge {
   amountPaid: number;
   pendingAmount: number;
   notes?: string;
+  calculatedAtUtc?: string;
+  allocations?: LoanChargeAllocation[];
+}
+
+export interface LoanChargeAllocation {
+  installmentId: string;
+  amount: number;
+  amountPaid: number;
+  pendingAmount: number;
 }
 
 export interface LoanDetail {
   loan: Loan;
   installments: Installment[];
   charges: LoanCharge[];
+}
+
+export interface LoanRecalculationPreview {
+  loanId: string;
+  mode: 1 | 2;
+  effectiveDate: string;
+  firstDueDate: string;
+  outstandingPrincipal: number;
+  currentInstallmentAmount: number;
+  newInstallmentAmount: number;
+  paidInstallments: number;
+  currentRemainingInstallments: number;
+  newRemainingInstallments: number;
+  newInterest: number;
+  newPendingTotal: number;
 }
 
 export interface Payment {
@@ -140,12 +164,14 @@ export interface Dashboard {
 
 export interface Notification {
   id: string;
-  type: 1 | 2;
+  type: 1 | 2 | 3 | 4;
   title: string;
   message: string;
   isRead: boolean;
   createdAtUtc: string;
   relatedEntityId: string;
+  relatedLoanId?: string;
+  dueDate?: string;
 }
 
 export interface AppUser {

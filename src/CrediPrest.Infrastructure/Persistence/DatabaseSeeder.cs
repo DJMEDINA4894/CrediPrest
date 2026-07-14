@@ -12,6 +12,19 @@ public sealed class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher passw
     {
         await dbContext.Database.MigrateAsync(cancellationToken);
 
+        var loansWithoutLateFeeRate = await dbContext.Loans
+            .Where(loan => loan.LateFeeDescription == null || loan.LateFeeDescription == string.Empty)
+            .ToListAsync(cancellationToken);
+        if (loansWithoutLateFeeRate.Count > 0)
+        {
+            foreach (var loan in loansWithoutLateFeeRate)
+            {
+                loan.LateFeeDescription = "50%";
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         var adminSeed = configuration.GetSection("AdminSeed");
         var adminUserName = adminSeed["UserName"]?.Trim();
         var adminEmail = adminSeed["Email"]?.Trim();

@@ -4,12 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class ClientPortalService(IApplicationDbContext dbContext, ILoanService loanService) : IClientPortalService
+internal sealed class ClientPortalService(IApplicationDbContext dbContext) : IClientPortalService
 {
     public async Task<IReadOnlyList<LoanDetailDto>> ListPaymentPlansAsync(Guid clientId, CancellationToken cancellationToken = default)
     {
-        await loanService.RefreshOverdueAsync(cancellationToken);
-
         var loans = await dbContext.Loans
             .Include(loan => loan.Client)
             .Include(loan => loan.LenderUser)

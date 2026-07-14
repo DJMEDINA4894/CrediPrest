@@ -1,13 +1,14 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, GhostButton, Screen } from "../components/ui";
+import { Card, EmptyState, ErrorText, GhostButton, Screen, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
-import { currencyLabels, dateOnly, installmentPendingAmount, installmentStatusLabels, money } from "../utils/format";
+import { currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
+import { shareLoanAgreement, shareLoanPaymentPlan } from "../utils/loanDocuments";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanDetail">;
 
@@ -15,6 +16,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
   const [detail, setDetail] = useState<LoanDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [documentAction, setDocumentAction] = useState<"pdf" | "agreement" | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,9 +36,27 @@ export function LoanDetailScreen({ route, navigation }: Props) {
 
   const currency = detail ? currencyLabels[detail.loan.currency] : "C$";
 
+  async function shareDocument(type: "pdf" | "agreement") {
+    if (!detail) return;
+
+    try {
+      setError("");
+      setDocumentAction(type);
+      if (type === "pdf") {
+        await shareLoanPaymentPlan(detail);
+      } else {
+        await shareLoanAgreement(detail);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo generar el documento.");
+    } finally {
+      setDocumentAction(null);
+    }
+  }
+
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
         {detail ? (
           <>
@@ -45,27 +65,42 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               <Text style={styles.total}>Total: {money(detail.loan.totalToPay, currency)}</Text>
               <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
               <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
+              {detail.loan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {detail.loan.lateFeeDescription}. {lateFeePolicyText(detail.loan.paymentFrequency, detail.loan.principalAmount, detail.loan.monthlyInterestRate, Number(detail.loan.lateFeeDescription.replace("%", "")) || 50, currency, detail.loan.termMonths)}</Text> : null}
               {detail.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(detail.loan.lateFeesPending, currency)}</Text> : null}
+              <View style={styles.documentActions}>
+                <GhostButton title={documentAction === "pdf" ? "Generando..." : "Tabla PDF"} onPress={() => void shareDocument("pdf")} />
+                <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Acuerdo Word"} onPress={() => void shareDocument("agreement")} />
+              </View>
               {detail.loan.status !== 2 ? (
                 <View style={styles.action}>
                   <GhostButton title="Registrar pago" onPress={() => navigation.navigate("Payments", { loan: detail.loan })} />
+                  {detail.installments.some((installment) => installment.amountPaid >= installment.paymentAmount) && detail.loan.pendingBalance > 0 ? (
+                    <GhostButton title="Recalcular cuotas" onPress={() => navigation.navigate("LoanRecalculation", { loanId: detail.loan.id })} />
+                  ) : null}
                 </View>
               ) : null}
             </Card>
 
             <Card title="Tabla de pagos">
-              {detail.installments.map((installment) => (
+              {detail.installments.map((installment) => {
+                const status = effectiveInstallmentStatus(installment);
+                const mora = lateFeeAllocation(detail, installment);
+                const pending = installmentPendingAmount(installment) + mora.pendingAmount;
+
+                return (
                 <View key={installment.id} style={styles.item}>
                   <View style={styles.row}>
                     <Text style={styles.itemTitle}>Cuota {installment.installmentNumber}</Text>
-                    <Text style={[styles.badge, installment.status === 3 ? styles.paidBadge : installment.status === 4 ? styles.overdueBadge : styles.pendingBadge]}>{installmentStatusLabels[installment.status]}</Text>
+                    <Text style={[styles.badge, status === 3 ? styles.paidBadge : status === 4 ? styles.overdueBadge : styles.pendingBadge]}>{installmentStatusLabels[status]}</Text>
                   </View>
                   <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
                   <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
-                  <Text style={styles.muted}>Pagado: {money(installment.amountPaid, currency)}</Text>
-                  <Text style={styles.pending}>Pendiente: {money(installmentPendingAmount(installment), currency)}</Text>
+                  {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
+                  <Text style={styles.muted}>Pagado: {money(installment.amountPaid + mora.amountPaid, currency)}</Text>
+                  <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
                 </View>
-              ))}
+                );
+              })}
             </Card>
 
             {detail.charges.length > 0 ? (
@@ -90,6 +125,9 @@ export function LoanDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   muted: {
     color: colors.muted,
     marginTop: 4
@@ -115,6 +153,13 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   action: {
+    gap: spacing.sm,
+    marginTop: spacing.md
+  },
+  documentActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
     marginTop: spacing.md
   },
   item: {

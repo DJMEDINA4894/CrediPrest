@@ -1,6 +1,7 @@
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { ClientPortalScreen } from "../screens/ClientPortalScreen";
 import { ClientFormScreen } from "../screens/ClientFormScreen";
@@ -9,11 +10,15 @@ import { DashboardScreen } from "../screens/DashboardScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { LoanDetailScreen } from "../screens/LoanDetailScreen";
 import { LoanFormScreen } from "../screens/LoanFormScreen";
+import { LoanRecalculationScreen } from "../screens/LoanRecalculationScreen";
 import { LoansScreen } from "../screens/LoansScreen";
 import { LoginScreen } from "../screens/LoginScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { PaymentsScreen } from "../screens/PaymentsScreen";
 import { ReportsScreen } from "../screens/ReportsScreen";
+import { SettingsScreen } from "../screens/SettingsScreen";
+import { UserFormScreen } from "../screens/UserFormScreen";
+import { UsersScreen } from "../screens/UsersScreen";
 import { colors } from "../theme/theme";
 import type { RootStackParamList } from "./types";
 
@@ -63,7 +68,15 @@ export function AppNavigator() {
             <Stack.Screen name="Loans" component={LoansScreen} options={{ title: "Prestamos" }} />
             <Stack.Screen name="LoanForm" component={LoanFormScreen} options={({ route }) => ({ title: route.params?.loan ? "Editar prestamo" : "Nuevo prestamo" })} />
             <Stack.Screen name="LoanDetail" component={LoanDetailScreen} options={{ title: "Detalle prestamo" }} />
+            <Stack.Screen name="LoanRecalculation" component={LoanRecalculationScreen} options={{ title: "Recalcular cuotas" }} />
             <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Pagos" }} />
+            {user.role === "Admin" ? (
+              <>
+                <Stack.Screen name="Users" component={UsersScreen} options={{ title: "Prestamistas" }} />
+                <Stack.Screen name="UserForm" component={UserFormScreen} options={({ route }) => ({ title: route.params?.user ? "Editar prestamista" : "Nuevo prestamista" })} />
+                <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Configuración" }} />
+              </>
+            ) : null}
           </>
         )}
       </Stack.Navigator>

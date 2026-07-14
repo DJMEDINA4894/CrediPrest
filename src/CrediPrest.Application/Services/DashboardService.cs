@@ -5,12 +5,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanService loanService, ICurrentUserContext currentUser) : IDashboardService
+internal sealed class DashboardService(IApplicationDbContext dbContext, ICurrentUserContext currentUser) : IDashboardService
 {
     public async Task<DashboardDto> GetAsync(CancellationToken cancellationToken = default)
     {
-        await loanService.RefreshOverdueAsync(cancellationToken);
-
         var today = DateTime.UtcNow.Date;
         var weekEnd = today.AddDays(7);
         var monthStart = new DateTime(today.Year, today.Month, 1);
@@ -39,8 +37,8 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
         var weekPayments = payments.Where(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today).ToList();
         var monthPayments = payments.Where(payment => payment.PaymentDate.Date >= monthStart && payment.PaymentDate.Date < monthEnd).ToList();
 
-        var totalRecoveredCordobas = SumPaymentsByCurrency(payments, CurrencyType.Cordoba);
-        var totalRecoveredUsd = SumPaymentsByCurrency(payments, CurrencyType.Usd);
+        var totalRecoveredCordobas = SumRecoveredByCurrency(loans, CurrencyType.Cordoba);
+        var totalRecoveredUsd = SumRecoveredByCurrency(loans, CurrencyType.Usd);
 
         return new DashboardDto(
             TotalLoanedCordobas: loans.Where(loan => loan.Currency == CurrencyType.Cordoba).Sum(loan => loan.PrincipalAmount),
@@ -71,12 +69,19 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ILoanSer
     private static decimal GetAppliedInstallmentAmount(Domain.Entities.Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
 
+    private static decimal GetRecoveredAmount(Domain.Entities.Loan loan)
+        => GetAppliedInstallmentAmount(loan)
+            + loan.Charges.Sum(charge => Math.Min(charge.Amount, Math.Max(0, charge.AmountPaid)));
+
     private static decimal GetPendingAmount(Domain.Entities.Loan loan)
         => Math.Max(0, loan.TotalToPay - GetAppliedInstallmentAmount(loan))
             + loan.Charges.Sum(charge => Math.Max(0, charge.Amount - charge.AmountPaid));
 
     private static decimal SumPaymentsByCurrency(IEnumerable<Domain.Entities.Payment> payments, CurrencyType currency)
         => payments.Where(payment => payment.Loan.Currency == currency).Sum(payment => payment.AmountPaid);
+
+    private static decimal SumRecoveredByCurrency(IEnumerable<Domain.Entities.Loan> loans, CurrencyType currency)
+        => loans.Where(loan => loan.Currency == currency).Sum(GetRecoveredAmount);
 
     private IQueryable<Domain.Entities.Loan> ApplyLoanOwnershipFilter(IQueryable<Domain.Entities.Loan> query)
     {

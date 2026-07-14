@@ -33,6 +33,20 @@ public sealed class LoansController(
     public async Task<ActionResult<LoanDetailDto>> Update(Guid id, UpdateLoanRequest request, CancellationToken cancellationToken)
         => Ok(await loanService.UpdateAsync(id, request, cancellationToken));
 
+    [HttpPost("{id:guid}/recalculation/preview")]
+    public async Task<ActionResult<LoanRecalculationPreviewDto>> PreviewRecalculation(
+        Guid id,
+        RecalculateLoanRequest request,
+        CancellationToken cancellationToken)
+        => Ok(await loanService.PreviewRecalculationAsync(id, request, cancellationToken));
+
+    [HttpPost("{id:guid}/recalculate")]
+    public async Task<ActionResult<LoanDetailDto>> Recalculate(
+        Guid id,
+        RecalculateLoanRequest request,
+        CancellationToken cancellationToken)
+        => Ok(await loanService.RecalculateAsync(id, request, cancellationToken));
+
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {

@@ -52,12 +52,48 @@ internal static class MappingExtensions
             installment.InterestAmount,
             installment.PaymentAmount,
             installment.RemainingBalance,
-            installment.Status,
+            GetEffectiveInstallmentStatus(installment),
             installment.PaidAtUtc,
             installment.AmountPaid);
 
-    public static LoanChargeDto ToDto(this LoanCharge charge)
-        => new(
+    public static LoanChargeDto ToDto(this LoanCharge charge, Loan loan)
+    {
+        var period = LateFeeCalculator.BuildPeriods(loan)
+            .FirstOrDefault(item => item.Number == charge.PeriodNumber);
+        var calculatedAllocations = period is null
+            ? []
+            : LateFeeCalculator.Calculate(loan, period.Installments, charge.AppliedAtUtc.Date).Allocations;
+        var calculatedTotal = calculatedAllocations.Sum(allocation => allocation.Amount);
+        var allocationAmounts = new List<(LateFeeInstallmentAllocation Allocation, decimal Amount)>();
+        var allocatedTotal = 0m;
+
+        for (var index = 0; index < calculatedAllocations.Count; index++)
+        {
+            var allocation = calculatedAllocations[index];
+            var isLast = index == calculatedAllocations.Count - 1;
+            var amount = isLast
+                ? charge.Amount - allocatedTotal
+                : calculatedTotal > 0
+                    ? Math.Round(charge.Amount * allocation.Amount / calculatedTotal, 2)
+                    : 0m;
+            amount = Math.Max(0, amount);
+            allocatedTotal += amount;
+            allocationAmounts.Add((allocation, amount));
+        }
+
+        var remainingPaid = charge.AmountPaid;
+        var allocations = allocationAmounts.Select(item =>
+        {
+            var amountPaid = Math.Round(Math.Min(item.Amount, Math.Max(0, remainingPaid)), 2);
+            remainingPaid = Math.Round(Math.Max(0, remainingPaid - amountPaid), 2);
+            return new LoanChargeAllocationDto(
+                item.Allocation.InstallmentId,
+                item.Amount,
+                amountPaid,
+                Math.Max(0, item.Amount - amountPaid));
+        }).ToList();
+
+        return new LoanChargeDto(
             charge.Id,
             (int)charge.Type,
             charge.PeriodNumber,
@@ -66,7 +102,10 @@ internal static class MappingExtensions
             charge.Amount,
             charge.AmountPaid,
             Math.Max(0, charge.Amount - charge.AmountPaid),
-            charge.Notes);
+            charge.Notes,
+            charge.AppliedAtUtc,
+            allocations);
+    }
 
     public static LoanDto ToDto(this Loan loan)
     {
@@ -101,11 +140,28 @@ internal static class MappingExtensions
             Math.Max(0, loan.TotalToPay - installmentPaid) + lateFeesPending,
             loan.Notes,
             loan.AgreementCity,
-            loan.LateFeeDescription);
+            string.IsNullOrWhiteSpace(loan.LateFeeDescription) ? "50%" : loan.LateFeeDescription);
     }
 
     private static decimal GetAppliedInstallmentAmount(Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
+
+    private static InstallmentStatus GetEffectiveInstallmentStatus(Installment installment)
+    {
+        if (installment.AmountPaid >= installment.PaymentAmount)
+        {
+            return InstallmentStatus.Paid;
+        }
+
+        if (installment.DueDate.Date < DateTime.UtcNow.Date)
+        {
+            return InstallmentStatus.Overdue;
+        }
+
+        return installment.AmountPaid > 0
+            ? InstallmentStatus.Partial
+            : InstallmentStatus.Pending;
+    }
 
     private static decimal GetPendingChargesAmount(Loan loan)
         => loan.Charges.Sum(charge => Math.Max(0, charge.Amount - charge.AmountPaid));
@@ -119,7 +175,7 @@ internal static class MappingExtensions
                 .ToList(),
             loan.Charges
                 .OrderBy(charge => charge.PeriodNumber)
-                .Select(charge => charge.ToDto())
+                .Select(charge => charge.ToDto(loan))
                 .ToList());
 
     public static PaymentDto ToDto(this Payment payment)

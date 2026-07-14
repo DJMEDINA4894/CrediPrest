@@ -9,4 +9,6 @@ public sealed record NotificationDto(
     string Message,
     bool IsRead,
     DateTime CreatedAtUtc,
-    Guid RelatedEntityId);
+    Guid RelatedEntityId,
+    Guid? RelatedLoanId,
+    DateTime? DueDate);

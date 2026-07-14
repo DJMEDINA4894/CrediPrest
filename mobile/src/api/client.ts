@@ -1,4 +1,4 @@
-import type { Client, Dashboard, Loan, LoanDetail, LoginResponse, Notification } from "../types/models";
+import type { AppUser, Client, Dashboard, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification, Payment } from "../types/models";
 
 const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? PRODUCTION_API_URL;
@@ -63,6 +63,10 @@ export const api = {
   notifications: () => request<Notification[]>("/notifications"),
   markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
   clientPaymentPlans: () => request<LoanDetail[]>("/client-portal/payment-plans"),
+  users: () => request<AppUser[]>("/users"),
+  createUser: (payload: unknown) => request<AppUser>("/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (id: string, payload: unknown) => request<AppUser>(`/users/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteUser: (id: string) => request<void>(`/users/${id}`, { method: "DELETE" }),
   clients: (search = "") => request<Client[]>(`/clients${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   createClient: (payload: unknown) => request<Client>("/clients", { method: "POST", body: JSON.stringify(payload) }),
   updateClient: (id: string, payload: unknown) => request<Client>(`/clients/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
@@ -71,10 +75,23 @@ export const api = {
   deleteClient: (id: string) => request<void>(`/clients/${id}`, { method: "DELETE" }),
   loans: () => request<Loan[]>("/loans"),
   loanDetail: (id: string) => request<LoanDetail>(`/loans/${id}`),
+  loanAgreementSource: (id: string) => ({
+    uri: `${API_URL}/loans/${id}/agreement`,
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+  }),
   createLoan: (payload: unknown) => request<LoanDetail>("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (id: string, payload: unknown) => request<LoanDetail>(`/loans/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  previewLoanRecalculation: (id: string, payload: unknown) =>
+    request<LoanRecalculationPreview>(`/loans/${id}/recalculation/preview`, { method: "POST", body: JSON.stringify(payload) }),
+  recalculateLoan: (id: string, payload: unknown) =>
+    request<LoanDetail>(`/loans/${id}/recalculate`, { method: "POST", body: JSON.stringify(payload) }),
   cancelLoan: (id: string) => request<void>(`/loans/${id}/cancel`, { method: "POST" }),
   deleteLoan: (id: string) => request<void>(`/loans/${id}`, { method: "DELETE" }),
+  payments: (loanId: string) => request<Payment[]>(`/loans/${loanId}/payments`),
+  paymentReceiptSource: (receiptId: string) => ({
+    uri: `${API_URL}/payments/receipts/${receiptId}`,
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
+  }),
   registerPayment: (payload: unknown) =>
     request<LoanDetail>("/payments", {
       method: "POST",

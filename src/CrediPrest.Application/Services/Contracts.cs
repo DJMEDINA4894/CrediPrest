@@ -30,6 +30,8 @@ public interface ILoanService
     Task<LoanDetailDto> GetDetailAsync(Guid id, CancellationToken cancellationToken = default);
     Task<LoanDetailDto> CreateAsync(CreateLoanRequest request, CancellationToken cancellationToken = default);
     Task<LoanDetailDto> UpdateAsync(Guid id, UpdateLoanRequest request, CancellationToken cancellationToken = default);
+    Task<LoanRecalculationPreviewDto> PreviewRecalculationAsync(Guid id, RecalculateLoanRequest request, CancellationToken cancellationToken = default);
+    Task<LoanDetailDto> RecalculateAsync(Guid id, RecalculateLoanRequest request, CancellationToken cancellationToken = default);
     Task CancelAsync(Guid id, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task RefreshOverdueAsync(CancellationToken cancellationToken = default);
@@ -51,6 +53,7 @@ public interface INotificationService
 {
     Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, CancellationToken cancellationToken = default);
     Task MarkAsReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default);
+    Task RefreshAutomaticAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IClientPortalService

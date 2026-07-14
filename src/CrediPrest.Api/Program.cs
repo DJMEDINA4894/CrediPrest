@@ -33,6 +33,7 @@ builder.Services.AddCors(options =>
 builder.Services
     .AddApplicationServices()
     .AddInfrastructureServices(builder.Configuration);
+builder.Services.AddHostedService<AutomaticMaintenanceService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

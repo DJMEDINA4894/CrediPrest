@@ -1,15 +1,25 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
+import type { TextInputProps, TextProps } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text as NativeText, TextInput, View } from "react-native";
+import { usePreferences } from "../context/PreferencesContext";
 import { colors, spacing } from "../theme/theme";
+
+export function Text({ style, ...props }: TextProps) {
+  const { fontScale } = usePreferences();
+  const flattenedStyle = StyleSheet.flatten(style);
+  const baseFontSize = typeof flattenedStyle?.fontSize === "number" ? flattenedStyle.fontSize : 14;
+
+  return <NativeText {...props} style={[style, { fontSize: Math.round(baseFontSize * fontScale) }]} />;
+}
 
 export function Screen({ children }: { children: ReactNode }) {
   return <View style={styles.screen}>{children}</View>;
 }
 
-export function Card({ title, children }: { title?: string; children: ReactNode }) {
+export function Card({ title, children, tone }: { title?: string; children: ReactNode; tone?: "new" }) {
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, tone === "new" && styles.cardNew]}>
       {title ? <Text style={styles.cardTitle}>{title}</Text> : null}
       {children}
     </View>
@@ -42,6 +52,14 @@ export function GhostButton({ title, onPress }: { title: string; onPress: () => 
   );
 }
 
+export function DangerButton({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.dangerButton} onPress={onPress}>
+      <Text style={styles.dangerButtonText}>{title}</Text>
+    </Pressable>
+  );
+}
+
 export function SecondaryButton({ title, onPress }: { title: string; onPress: () => void }) {
   return (
     <Pressable style={styles.secondaryButton} onPress={onPress}>
@@ -50,11 +68,45 @@ export function SecondaryButton({ title, onPress }: { title: string; onPress: ()
   );
 }
 
-export function Field({ label, ...props }: TextInputProps & { label: string }) {
+export function Field({
+  label,
+  suffix,
+  rightActionContent,
+  rightActionAccessibilityLabel,
+  onRightAction,
+  style,
+  ...props
+}: TextInputProps & {
+  label: string;
+  suffix?: string;
+  rightActionContent?: ReactNode;
+  rightActionAccessibilityLabel?: string;
+  onRightAction?: () => void;
+}) {
+  const { fontScale } = usePreferences();
+
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput placeholderTextColor="#8b9ba6" style={styles.input} {...props} />
+      <View style={styles.inputWithSuffix}>
+        <TextInput
+          placeholderTextColor="#8b9ba6"
+          style={[styles.input, Boolean(suffix || rightActionContent) && styles.inputWithSuffixValue, { fontSize: Math.round(16 * fontScale) }, style]}
+          {...props}
+        />
+        {suffix ? <Text style={styles.inputSuffix}>{suffix}</Text> : null}
+        {rightActionContent && onRightAction ? (
+          <Pressable
+            accessibilityLabel={rightActionAccessibilityLabel}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onRightAction}
+            style={styles.inputAction}
+          >
+            {rightActionContent}
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -142,6 +194,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     padding: spacing.md
   },
+  cardNew: {
+    backgroundColor: "#fff8e8",
+    borderColor: "#efc778"
+  },
   cardTitle: {
     color: colors.text,
     fontSize: 16,
@@ -174,6 +230,20 @@ const styles = StyleSheet.create({
   ghostButtonText: {
     color: colors.primaryDark,
     fontWeight: "800"
+  },
+  dangerButton: {
+    alignItems: "center",
+    backgroundColor: "#fff0f1",
+    borderColor: "#e7a5aa",
+    borderRadius: 9,
+    borderWidth: 1,
+    minHeight: 42,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md
+  },
+  dangerButtonText: {
+    color: colors.danger,
+    fontWeight: "900"
   },
   secondaryButton: {
     alignItems: "center",
@@ -269,6 +339,28 @@ const styles = StyleSheet.create({
     color: colors.text,
     minHeight: 46,
     paddingHorizontal: spacing.md
+  },
+  inputWithSuffix: {
+    position: "relative"
+  },
+  inputWithSuffixValue: {
+    paddingRight: 78
+  },
+  inputSuffix: {
+    color: colors.muted,
+    fontWeight: "900",
+    position: "absolute",
+    right: 14,
+    top: 13
+  },
+  inputAction: {
+    alignItems: "center",
+    bottom: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    position: "absolute",
+    right: 1,
+    top: 1
   },
   metric: {
     backgroundColor: "#fff",

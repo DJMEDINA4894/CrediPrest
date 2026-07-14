@@ -1,8 +1,8 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text } from "react-native";
+import { Alert, ScrollView, StyleSheet } from "react-native";
 import { api } from "../api/client";
-import { Card, ErrorText, Field, PrimaryButton, Screen, SelectField } from "../components/ui";
+import { Card, ErrorText, Field, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import type { Client } from "../types/models";
 import { colors, spacing } from "../theme/theme";

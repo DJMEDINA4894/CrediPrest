@@ -1,13 +1,13 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Field, PrimaryButton, Screen, SelectField } from "../components/ui";
+import { Card, EmptyState, ErrorText, Field, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { Client } from "../types/models";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
-import { dateInputValue } from "../utils/format";
+import { currencyLabels, dateInputValue, lateFeePolicyText } from "../utils/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanForm">;
 
@@ -34,7 +34,7 @@ export function LoanFormScreen({ route, navigation }: Props) {
   const [startDate, setStartDate] = useState(dateInputValue(loan?.startDate));
   const [notes, setNotes] = useState(loan?.notes ?? "");
   const [agreementCity, setAgreementCity] = useState(loan?.agreementCity ?? "");
-  const [lateFeeDescription, setLateFeeDescription] = useState(loan?.lateFeeDescription ?? "");
+  const [lateFeeDescription, setLateFeeDescription] = useState(loan?.lateFeeDescription?.replace("%", "") ?? "50");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -91,7 +91,7 @@ export function LoanFormScreen({ route, navigation }: Props) {
       referenceName: referenceName.trim() || undefined,
       notes: notes.trim() || undefined,
       agreementCity: agreementCity.trim() || undefined,
-      lateFeeDescription: lateFeeDescription.trim() || undefined
+      lateFeeDescription: lateFeeDescription.trim() || "50"
     };
 
     try {
@@ -110,6 +110,13 @@ export function LoanFormScreen({ route, navigation }: Props) {
 
   const selectedFrequency = Number(paymentFrequency);
   const termLabel = selectedFrequency === 1 ? "Cantidad de pagos semanales" : selectedFrequency === 2 ? "Cantidad de pagos quincenales" : "Cantidad de pagos mensuales";
+  const lateFeeExplanation = lateFeePolicyText(
+    selectedFrequency,
+    Number(principalAmount) || 5000,
+    Number(monthlyInterestRate) || 0,
+    Number(lateFeeDescription) || 0,
+    currencyLabels[Number(currency) === 2 ? 2 : 1],
+    Number(termMonths) || 1);
   const clientOptions = clients
     .filter((client) => client.isActive || client.id === loan?.clientId)
     .map((client) => ({ value: client.id, label: `${client.fullName} - ${client.identificationNumber}` }));
@@ -131,7 +138,8 @@ export function LoanFormScreen({ route, navigation }: Props) {
           <Field label="Fecha de inicio" value={startDate} onChangeText={setStartDate} placeholder="AAAA-MM-DD" />
           <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
           <Field label="Ciudad del acuerdo" value={agreementCity} onChangeText={setAgreementCity} placeholder="Ej. Managua" />
-          <Field label="Recargo por mora" value={lateFeeDescription} onChangeText={setLateFeeDescription} placeholder="Ej. 50" keyboardType="decimal-pad" />
+          <Field label="Tasa de mora (% de la tasa de interés)" value={lateFeeDescription} onChangeText={setLateFeeDescription} placeholder="Ej. 50" keyboardType="decimal-pad" suffix="%" />
+          <Text style={styles.hint}>{lateFeeExplanation}</Text>
           <Text style={styles.hint}>El plazo se calcula por frecuencia: semanal cada 7 dias, quincenal cada 15 dias y mensual cada mes.</Text>
           <PrimaryButton title={loan ? "Guardar cambios" : "Crear y generar cuotas"} onPress={() => void save()} loading={saving} disabled={!loan && clients.length === 0} />
         </Card>

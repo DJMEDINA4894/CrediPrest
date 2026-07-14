@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api, clearToken, getToken, setToken } from "./api/client";
-import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoginResponse, Notification } from "./types/models";
+import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification } from "./types/models";
 
-type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "users" | "settings" | "clientPortal";
+type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "notifications" | "users" | "settings" | "clientPortal";
 type ConfirmDialogState = {
   title: string;
   message: string;
@@ -17,7 +17,7 @@ const frequencyLabels = { 1: "Semanal", 2: "Quincenal", 3: "Mensual" };
 const termLabels = { 1: "Cantidad de pagos semanales", 2: "Cantidad de pagos quincenales", 3: "Cantidad de pagos mensuales" };
 const termPlaceholders = { 1: "Ej. 8 semanas", 2: "Ej. 6 quincenas", 3: "Ej. 6 meses" };
 const statusLabels = { 1: "Activo", 2: "Cancelado", 3: "Vencido" };
-const installmentStatusLabels = { 1: "Pendiente", 2: "Parcial", 3: "Pagada", 4: "Atrasada" };
+const installmentStatusLabels = { 1: "Pendiente", 2: "Parcial", 3: "Pagada", 4: "Retrasada" };
 const paymentPreferenceLabels: Record<string, string> = {
   cash: "Efectivo",
   bac: "BAC",
@@ -81,6 +81,70 @@ function money(value: number, currency = "C$") {
   return `${currency} ${value.toLocaleString("es-NI", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function lateFeeRateLabel(loan: Loan) {
+  const configuredValue = loan.lateFeeDescription?.match(/\d+(?:[.,]\d{1,2})?/)?.[0];
+  const amount = configuredValue ? Number(configuredValue.replace(",", ".")) : Number.NaN;
+  return Number.isFinite(amount) ? `${amount}% de la tasa de interés` : loan.lateFeeDescription ?? "-";
+}
+
+function lateFeePolicyText(loan: {
+  paymentFrequency: number;
+  principalAmount?: number;
+  monthlyInterestRate?: number;
+  lateFeeDescription?: string;
+  currency?: number;
+  termMonths?: number;
+}) {
+  const principalAmount = Number.isFinite(loan.principalAmount) && (loan.principalAmount ?? 0) > 0 ? loan.principalAmount! : 5000;
+  const monthlyInterestRate = Number.isFinite(loan.monthlyInterestRate) ? loan.monthlyInterestRate! : 10;
+  const lateFeePercentage = Number(loan.lateFeeDescription?.replace("%", "").replace(",", ".")) || 50;
+  const installmentCount = Number.isFinite(loan.termMonths) && (loan.termMonths ?? 0) > 0 ? loan.termMonths! : 1;
+  const currency = loan.currency === 2 ? "USD" : "C$";
+  const monthlyLateFeeRate = monthlyInterestRate * lateFeePercentage / 100;
+  const periodSize = loan.paymentFrequency === 1 ? 4 : loan.paymentFrequency === 2 ? 2 : 1;
+  const interestMonths = loan.paymentFrequency === 1 ? installmentCount / 4 : loan.paymentFrequency === 2 ? installmentCount / 2 : installmentCount;
+  const totalToPay = principalAmount + principalAmount * monthlyInterestRate / 100 * interestMonths;
+  const installmentAmount = totalToPay / installmentCount;
+  const installmentsInPeriod = Math.min(periodSize, installmentCount);
+  const monthlyPeriodAmount = installmentAmount * installmentsInPeriod;
+  const fixedLateFee = monthlyPeriodAmount * monthlyLateFeeRate / 100;
+  const frequencyText = loan.paymentFrequency === 1
+    ? `se reparte entre ${installmentsInPeriod} cuotas semanales`
+    : loan.paymentFrequency === 2
+      ? `se reparte entre ${installmentsInPeriod} cuotas quincenales`
+      : "se carga en la cuota mensual";
+  return `La mora es fija y no crece por días. Al cerrar el período mensual se aplica ${monthlyLateFeeRate}% al monto que siga pendiente de ese período. ${lateFeePercentage}% de la tasa de interés mensual de ${monthlyInterestRate}% equivale a ${monthlyLateFeeRate}%. Ejemplo con este plan: si quedan pendientes ${money(monthlyPeriodAmount, currency)}, la mora sería ${money(fixedLateFee, currency)} y ${frequencyText}${installmentsInPeriod > 1 ? `: ${money(fixedLateFee / installmentsInPeriod, currency)} por cuota` : ""}.`;
+}
+
+function lateFeePolicyTextForFrequency(paymentFrequency: number, principalAmount?: number, monthlyInterestRate?: number, lateFeeDescription?: string, currency?: number, termMonths?: number) {
+  return lateFeePolicyText({ paymentFrequency, principalAmount, monthlyInterestRate, lateFeeDescription, currency, termMonths });
+}
+
+function InfoTooltip({ text }: { text: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <span className="info-tooltip-wrap">
+      <button
+        type="button"
+        className="info-tooltip-trigger"
+        aria-label="Información sobre la mora"
+        aria-expanded={isOpen}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setIsOpen((value) => !value);
+        }}
+      >
+        i
+      </button>
+      <span className={`info-tooltip-popup ${isOpen ? "is-open" : ""}`} role="tooltip">
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function clientDebt(client: Client) {
   if (client.pendingCordobas > 0 && client.pendingUsd > 0) {
     return `${money(client.pendingCordobas)} / ${money(client.pendingUsd, "USD")}`;
@@ -119,6 +183,59 @@ function dualMoney(cordobas = 0, usd = 0) {
 
 function installmentPendingAmount(installment: Installment) {
   return Math.max(0, installment.paymentAmount - installment.amountPaid);
+}
+
+function lateFeePeriodSize(paymentFrequency: number) {
+  return paymentFrequency === 1 ? 4 : paymentFrequency === 2 ? 2 : 1;
+}
+
+function installmentPeriodNumber(paymentFrequency: number, installmentNumber: number) {
+  return Math.floor((installmentNumber - 1) / lateFeePeriodSize(paymentFrequency)) + 1;
+}
+
+function roundedCurrency(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function lateFeeAllocation(detail: LoanDetail, installment: Installment) {
+  const periodSize = lateFeePeriodSize(detail.loan.paymentFrequency);
+  const periodNumber = installmentPeriodNumber(detail.loan.paymentFrequency, installment.installmentNumber);
+  const periodInstallments = detail.installments.filter((item) =>
+    installmentPeriodNumber(detail.loan.paymentFrequency, item.installmentNumber) === periodNumber
+  );
+  const periodIndex = periodInstallments.findIndex((item) => item.id === installment.id);
+  const charge = detail.charges.find((item) => item.periodNumber === periodNumber);
+
+  if (!charge || periodIndex < 0) {
+    return { amount: 0, amountPaid: 0, pendingAmount: 0 };
+  }
+
+  const allocation = charge.allocations?.find((item) => item.installmentId === installment.id);
+  if (allocation) {
+    return {
+      amount: allocation.amount,
+      amountPaid: allocation.amountPaid,
+      pendingAmount: allocation.pendingAmount
+    };
+  }
+
+  const regularShare = roundedCurrency(charge.amount / periodSize);
+  const amount = periodIndex === periodSize - 1
+    ? roundedCurrency(charge.amount - regularShare * (periodSize - 1))
+    : regularShare;
+  const paidBefore = periodInstallments.slice(0, periodIndex).reduce((sum, _item, index) => {
+    const previousAmount = index === periodSize - 1
+      ? roundedCurrency(charge.amount - regularShare * (periodSize - 1))
+      : regularShare;
+    return sum + Math.min(previousAmount, Math.max(0, charge.amountPaid - sum));
+  }, 0);
+  const amountPaid = roundedCurrency(Math.min(amount, Math.max(0, charge.amountPaid - paidBefore)));
+
+  return {
+    amount,
+    amountPaid,
+    pendingAmount: roundedCurrency(Math.max(0, amount - amountPaid))
+  };
 }
 
 function dateOnly(value: string) {
@@ -175,29 +292,35 @@ function buildPaymentTablePdf(detail: LoanDetail) {
   const margin = 32;
   const rowHeight = 18;
   const columns = [
-    { title: "#", width: 28, max: 4 },
-    { title: "Vence", width: 92, max: 18 },
-    { title: "Capital", width: 90, max: 18 },
-    { title: "Interes", width: 90, max: 18 },
-    { title: "Cuota", width: 90, max: 18 },
-    { title: "Pagado", width: 90, max: 18 },
-    { title: "Pendiente", width: 95, max: 18 },
-    { title: "Debe", width: 90, max: 18 },
-    { title: "Estado", width: 85, max: 16 }
+    { title: "#", width: 25, max: 4 },
+    { title: "Vence", width: 85, max: 18 },
+    { title: "Capital", width: 75, max: 18 },
+    { title: "Interes", width: 75, max: 18 },
+    { title: "Cuota", width: 80, max: 18 },
+    { title: "Mora", width: 62, max: 18 },
+    { title: "Pagado", width: 80, max: 18 },
+    { title: "Pendiente", width: 85, max: 18 },
+    { title: "Debe", width: 78, max: 18 },
+    { title: "Estado", width: 72, max: 16 }
   ];
   const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
   const currency = currencyLabels[detail.loan.currency];
-  const rows = detail.installments.map((installment) => [
-    String(installment.installmentNumber),
-    dateOnly(installment.dueDate),
-    money(installment.principalAmount, currency),
-    money(installment.interestAmount, currency),
-    money(installment.paymentAmount, currency),
-    money(installment.amountPaid, currency),
-    money(installmentPendingAmount(installment), currency),
-    money(installment.remainingBalance, currency),
-    installmentStatusLabels[installment.status]
-  ]);
+  const rows = detail.installments.map((installment) => {
+    const mora = lateFeeAllocation(detail, installment);
+
+    return [
+      String(installment.installmentNumber),
+      dateOnly(installment.dueDate),
+      money(installment.principalAmount, currency),
+      money(installment.interestAmount, currency),
+      money(installment.paymentAmount, currency),
+      mora.amount > 0 ? money(mora.amount, currency) : "-",
+      money(installment.amountPaid + mora.amountPaid, currency),
+      money(installmentPendingAmount(installment) + mora.pendingAmount, currency),
+      money(installment.remainingBalance, currency),
+      installmentStatusLabels[installment.status]
+    ];
+  });
 
   const pages: string[] = [];
   let rowIndex = 0;
@@ -413,6 +536,15 @@ function EyeIcon({ crossed }: { crossed: boolean }) {
   );
 }
 
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" fill="currentColor" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M10 21h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function paymentAccountValue(client: Client | null) {
   if (!client) {
     return "";
@@ -572,6 +704,7 @@ export default function App() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanDetail, setLoanDetail] = useState<LoanDetail | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [clientPlanFocusId, setClientPlanFocusId] = useState<string | null>(null);
   const [clientPlans, setClientPlans] = useState<LoanDetail[]>([]);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -587,13 +720,20 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const refreshInFlight = useRef(false);
 
-  async function refresh(search = clientSearch) {
+  async function refresh(
+    search = clientSearch,
+    options: { showSpinner?: boolean; refreshLoanDetail?: boolean } = {}
+  ) {
+    const showSpinner = options.showSpinner ?? true;
+    const refreshLoanDetail = options.refreshLoanDetail ?? true;
     if (refreshInFlight.current) {
       return;
     }
 
     refreshInFlight.current = true;
-    setRefreshing(true);
+    if (showSpinner) {
+      setRefreshing(true);
+    }
     setError(null);
     try {
       if (session?.role === "Client") {
@@ -619,7 +759,7 @@ export default function App() {
         setLoans(loanData);
         setNotifications(notificationData);
         setUsers(userData);
-        if (loanDetail) {
+        if (loanDetail && refreshLoanDetail) {
           if (loanData.some((loan) => loan.id === loanDetail.loan.id)) {
             setLoanDetail(await api.loanDetail(loanDetail.loan.id));
           } else {
@@ -636,7 +776,9 @@ export default function App() {
       }
     } finally {
       refreshInFlight.current = false;
-      setRefreshing(false);
+      if (showSpinner) {
+        setRefreshing(false);
+      }
     }
   }
 
@@ -686,6 +828,7 @@ export default function App() {
     setLoans([]);
     setLoanDetail(null);
     setNotifications([]);
+    setClientPlanFocusId(null);
     setClientPlans([]);
     setUsers([]);
     setEditingClient(null);
@@ -884,7 +1027,8 @@ export default function App() {
       setEditingLoan(null);
       setNewLoanClientId("");
       formElement.reset();
-      await refresh();
+      await refresh(clientSearch, { showSpinner: false, refreshLoanDetail: false });
+      setLoanDetail(detail);
       setView("loans");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el préstamo");
@@ -1055,6 +1199,25 @@ export default function App() {
     }
   }
 
+  async function openNotification(notification: Notification) {
+    if (!notification.isRead) {
+      await markNotificationRead(notification.id);
+    }
+
+    if (!notification.relatedLoanId) {
+      setView("notifications");
+      return;
+    }
+
+    if (session?.role === "Client") {
+      setClientPlanFocusId(notification.relatedLoanId);
+      setView("clientPortal");
+      return;
+    }
+
+    await openLoan(notification.relatedLoanId, "payments");
+  }
+
   const overdueLoans = useMemo(() => loans.filter((loan) => loan.status === 3), [loans]);
   const activeLoans = useMemo(() => loans.filter((loan) => loan.status === 1), [loans]);
   const activeClients = useMemo(() => clients.filter((client) => client.isActive), [clients]);
@@ -1197,6 +1360,24 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="sidebar-notifications">
+          <button
+            type="button"
+            className={`notification-trigger ${view === "notifications" ? "active" : ""}`}
+            aria-current={view === "notifications" ? "page" : undefined}
+            onClick={() => setView("notifications")}
+          >
+            <span className="notification-trigger-label">
+              <span className="notification-header-icon notification-bell" aria-hidden="true"><BellIcon /></span>
+              Notificaciones
+            </span>
+            {notifications.filter((notification) => !notification.isRead).length > 0 && (
+              <span className="notification-count">
+                {Math.min(99, notifications.filter((notification) => !notification.isRead).length)}
+              </span>
+            )}
+          </button>
+        </div>
         <div className="sidebar-session">
           <div className="session-user">
             <span className="session-dot" aria-hidden="true" />
@@ -1231,10 +1412,16 @@ export default function App() {
         </header>
 
         {error && <div className="alert">{error}</div>}
-        {notifications.length > 0 && <NotificationsPanel notifications={notifications} markAsRead={markNotificationRead} />}
 
         {view === "dashboard" && <DashboardView dashboard={dashboard} activeLoans={activeLoans} overdueLoans={overdueLoans} navigate={setView} />}
-        {view === "clientPortal" && <ClientPortalView plans={clientPlans} />}
+        {view === "clientPortal" && <ClientPortalView plans={clientPlans} focusPlanId={clientPlanFocusId} />}
+        {view === "notifications" && (
+          <NotificationsView
+            notifications={notifications}
+            openNotification={openNotification}
+            actionLabel={session?.role === "Client" ? "Ver plan" : "Ver en Pagos"}
+          />
+        )}
         {view === "clients" && (
           <ClientsView
             clients={clients}
@@ -1262,6 +1449,11 @@ export default function App() {
             setEditingLoan={startEditingLoan}
             startNewLoan={startNewLoan}
             deleteLoan={deleteLoan}
+            onLoanRecalculated={async (detail) => {
+              setLoanDetail(detail);
+              await refresh(clientSearch, { showSpinner: false, refreshLoanDetail: false });
+              setLoanDetail(detail);
+            }}
             cancelLoan={async (id) => {
               await api.cancelLoan(id);
               await refresh();
@@ -1307,34 +1499,72 @@ function viewLabel(view: View) {
     loans: "Préstamos",
     payments: "Pagos",
     reports: "Reportes",
+    notifications: "Notificaciones",
     users: "Usuarios",
     settings: "Configuración",
     clientPortal: "Mi plan de pago"
   }[view];
 }
 
-function NotificationsPanel({ notifications, markAsRead }: { notifications: Notification[]; markAsRead: (id: string) => void }) {
-  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
-
+function NotificationsView({
+  notifications,
+  openNotification,
+  actionLabel
+}: {
+  notifications: Notification[];
+  openNotification: (notification: Notification) => void | Promise<void>;
+  actionLabel: string;
+}) {
   return (
-    <Panel title={`Notificaciones${unreadCount > 0 ? ` (${unreadCount})` : ""}`}>
-      <div className="notification-list">
-        {notifications.slice(0, 5).map((notification) => (
-          <div key={notification.id} className={`notification-item ${notification.isRead ? "read" : ""}`}>
+    <section className="stack">
+      <Panel
+        title={(
+          <span className="notification-heading">
+            <span className="notification-header-icon"><BellIcon /></span>
+            <span>Todas las notificaciones{notifications.length > 0 ? ` (${notifications.length})` : ""}</span>
+          </span>
+        )}
+      >
+        <div className="notification-list notification-list-page">
+        {notifications.length === 0 && <p className="notification-empty">No hay notificaciones.</p>}
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`notification-item ${notification.isRead ? "read" : ""}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => void openNotification(notification)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                void openNotification(notification);
+              }
+            }}
+          >
             <div>
               <strong>{notification.title}</strong>
               <p>{notification.message}</p>
-              <small>{dateOnly(notification.createdAtUtc)}</small>
+              <small>Vence: {dateOnly(notification.dueDate ?? notification.createdAtUtc)}</small>
             </div>
-            {!notification.isRead && (
-              <button type="button" className="ghost" onClick={() => markAsRead(notification.id)}>
-                Marcar leída
-              </button>
-            )}
+            <footer className="notification-actions">
+              {notification.relatedLoanId && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void openNotification(notification);
+                  }}
+                >
+                  {actionLabel}
+                </button>
+              )}
+            </footer>
           </div>
         ))}
-      </div>
-    </Panel>
+        </div>
+      </Panel>
+    </section>
   );
 }
 
@@ -1598,12 +1828,24 @@ function LoansView(props: {
   startNewLoan: (clientId?: string) => void;
   cancelLoan: (id: string) => Promise<void>;
   deleteLoan: (id: string) => void | Promise<void>;
+  onLoanRecalculated: (detail: LoanDetail) => void | Promise<void>;
 }) {
   const [selectedFrequency, setSelectedFrequency] = useState<number>(props.editingLoan?.paymentFrequency ?? 3);
+  const [examplePrincipalAmount, setExamplePrincipalAmount] = useState(props.editingLoan?.principalAmount ?? 5000);
+  const [exampleInterestRate, setExampleInterestRate] = useState(props.editingLoan?.monthlyInterestRate ?? 10);
+  const [exampleLateFee, setExampleLateFee] = useState(Number(props.editingLoan?.lateFeeDescription?.replace("%", "")) || 50);
+  const [exampleCurrency, setExampleCurrency] = useState<number>(props.editingLoan?.currency ?? 1);
+  const [exampleTermMonths, setExampleTermMonths] = useState(props.editingLoan?.termMonths ?? 1);
+  const [recalculationDetail, setRecalculationDetail] = useState<LoanDetail | null>(null);
   const selectedTermKey = selectedFrequency as keyof typeof termLabels;
 
   useEffect(() => {
     setSelectedFrequency(props.editingLoan?.paymentFrequency ?? 3);
+    setExamplePrincipalAmount(props.editingLoan?.principalAmount ?? 5000);
+    setExampleInterestRate(props.editingLoan?.monthlyInterestRate ?? 10);
+    setExampleLateFee(Number(props.editingLoan?.lateFeeDescription?.replace("%", "")) || 50);
+    setExampleCurrency(props.editingLoan?.currency ?? 1);
+    setExampleTermMonths(props.editingLoan?.termMonths ?? 1);
   }, [props.editingLoan?.id, props.editingLoan?.paymentFrequency]);
 
   return (
@@ -1632,18 +1874,18 @@ function LoansView(props: {
             </label>
             <label className="field-label">
               Monto prestado
-              <input name="principalAmount" type="number" min="1" step="0.01" placeholder="Ej. 5000" defaultValue={props.editingLoan?.principalAmount} required />
+              <input name="principalAmount" type="number" min="1" step="0.01" placeholder="Ej. 5000" defaultValue={props.editingLoan?.principalAmount} onChange={(event) => setExamplePrincipalAmount(Number(event.target.value))} required />
             </label>
             <label className="field-label">
               Moneda
-              <select name="currency" defaultValue={String(props.editingLoan?.currency ?? 1)}>
+              <select name="currency" defaultValue={String(props.editingLoan?.currency ?? 1)} onChange={(event) => setExampleCurrency(Number(event.target.value))}>
                 <option value="1">Córdobas C$</option>
                 <option value="2">Dólares USD</option>
               </select>
             </label>
             <label className="field-label">
               Interés mensual
-              <input name="monthlyInterestRate" type="number" min="0" step="0.01" placeholder="Ej. 10" defaultValue={props.editingLoan?.monthlyInterestRate ?? 10} required />
+              <input name="monthlyInterestRate" type="number" min="0" step="0.01" placeholder="Ej. 10" defaultValue={props.editingLoan?.monthlyInterestRate ?? 10} onChange={(event) => setExampleInterestRate(Number(event.target.value))} required />
             </label>
             <label className="field-label">
               Frecuencia de pago
@@ -1655,7 +1897,7 @@ function LoansView(props: {
             </label>
             <label className="field-label">
               {termLabels[selectedTermKey]}
-              <input name="termMonths" type="number" min="1" defaultValue={props.editingLoan?.termMonths ?? 1} placeholder={termPlaceholders[selectedTermKey]} required />
+              <input name="termMonths" type="number" min="1" defaultValue={props.editingLoan?.termMonths ?? 1} placeholder={termPlaceholders[selectedTermKey]} onChange={(event) => setExampleTermMonths(Number(event.target.value))} required />
             </label>
             <label className="field-label">
               Fecha de inicio
@@ -1670,8 +1912,24 @@ function LoansView(props: {
               <input name="agreementCity" placeholder="Ej. Managua" maxLength={120} defaultValue={props.editingLoan?.agreementCity} />
             </label>
             <label className="field-label">
-              Recargo por mora
-              <input name="lateFeeDescription" placeholder="Ej. 50" maxLength={220} defaultValue={props.editingLoan?.lateFeeDescription} />
+              Tasa de mora (% de la tasa de interés)
+              <span className="late-fee-input-row">
+                <span className="input-with-suffix">
+                  <input
+                    name="lateFeeDescription"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="Ej. 50"
+                    defaultValue={props.editingLoan?.lateFeeDescription?.replace("%", "") ?? "50"}
+                    required
+                    onChange={(event) => setExampleLateFee(Number(event.target.value))}
+                  />
+                  <span className="input-suffix" aria-hidden="true">%</span>
+                </span>
+                <InfoTooltip text={lateFeePolicyTextForFrequency(selectedFrequency, examplePrincipalAmount, exampleInterestRate, `${exampleLateFee}%`, exampleCurrency, exampleTermMonths)} />
+              </span>
             </label>
             <div className="loan-submit-row span-3">
               <p className="form-hint loan-term-hint">El plazo se calcula por frecuencia: semanal crea pagos cada 7 días, quincenal cada 15 días y mensual cada mes.</p>
@@ -1726,7 +1984,22 @@ function LoansView(props: {
             </table>
           </div>
         </Panel>
-      {props.loanDetail && <LoanDetailPanel detail={props.loanDetail} />}
+      {props.loanDetail && (
+        <LoanDetailPanel
+          detail={props.loanDetail}
+          onRecalculate={() => setRecalculationDetail(props.loanDetail)}
+        />
+      )}
+      {recalculationDetail && (
+        <LoanRecalculationDialog
+          detail={recalculationDetail}
+          onClose={() => setRecalculationDetail(null)}
+          onApplied={async (detail) => {
+            await props.onLoanRecalculated(detail);
+            setRecalculationDetail(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -1851,7 +2124,15 @@ function PaymentsView(props: {
   );
 }
 
-function ClientPortalView({ plans }: { plans: LoanDetail[] }) {
+function ClientPortalView({ plans, focusPlanId }: { plans: LoanDetail[]; focusPlanId: string | null }) {
+  useEffect(() => {
+    if (!focusPlanId) {
+      return;
+    }
+
+    document.getElementById(`client-plan-${focusPlanId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusPlanId]);
+
   if (plans.length === 0) {
     return (
       <Panel title="Mi plan de pago">
@@ -1869,7 +2150,9 @@ function ClientPortalView({ plans }: { plans: LoanDetail[] }) {
         <Metric title="Cuotas atrasadas" value={String(plans.flatMap((plan) => plan.installments).filter((installment) => installment.status === 4).length)} tone="danger" />
       </div>
       {plans.map((plan) => (
-        <LoanDetailPanel key={plan.loan.id} detail={plan} />
+        <div key={plan.loan.id} id={`client-plan-${plan.loan.id}`} className={focusPlanId === plan.loan.id ? "notification-target" : undefined}>
+          <LoanDetailPanel detail={plan} />
+        </div>
       ))}
     </section>
   );
@@ -2121,12 +2404,17 @@ function SettingsView({ fontSize, setFontSize }: { fontSize: number; setFontSize
   );
 }
 
-function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
+function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onRecalculate?: () => void }) {
   const [agreementError, setAgreementError] = useState("");
 
   return (
     <Panel title={`Tabla de pagos - ${loanDisplayName(detail.loan)}`}>
       <div className="panel-toolbar">
+        {onRecalculate && detail.installments.some((installment) => installment.amountPaid >= installment.paymentAmount) && detail.loan.pendingBalance > 0 && (
+          <button type="button" className="ghost" onClick={onRecalculate}>
+            Recalcular cuotas
+          </button>
+        )}
         <button type="button" className="ghost" onClick={() => downloadPaymentTablePdf(detail)}>
           Descargar PDF
         </button>
@@ -2148,7 +2436,14 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
         {detail.loan.referenceName && <span>Referencia {detail.loan.referenceName}</span>}
         <span>Total {money(detail.loan.totalToPay, currencyLabels[detail.loan.currency])}</span>
         <span>Pagado {money(detail.loan.totalPaid, currencyLabels[detail.loan.currency])}</span>
-        {detail.loan.lateFeesPending > 0 && <span>Mora pendiente {money(detail.loan.lateFeesPending, currencyLabels[detail.loan.currency])}</span>}
+        {detail.loan.lateFeeDescription && (
+          <span className="loan-fee-note">
+            {detail.loan.lateFeesPending > 0
+              ? `Mora pendiente ${money(detail.loan.lateFeesPending, currencyLabels[detail.loan.currency])}`
+              : `Mora ${lateFeeRateLabel(detail.loan)}`}
+            <InfoTooltip text={lateFeePolicyText(detail.loan)} />
+          </span>
+        )}
         <span>Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>
       </div>
       <div className="table-wrap">
@@ -2160,6 +2455,7 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
               <th>Capital</th>
               <th>Interés</th>
               <th>Cuota</th>
+              <th>Mora</th>
               <th>Pagado</th>
               <th>Pendiente</th>
               <th>Debe</th>
@@ -2167,19 +2463,25 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
             </tr>
           </thead>
           <tbody>
-            {detail.installments.map((installment: Installment) => (
-              <tr key={installment.id}>
-                <td>{installment.installmentNumber}</td>
-                <td>{dateOnly(installment.dueDate)}</td>
-                <td>{money(installment.principalAmount, currencyLabels[detail.loan.currency])}</td>
-                <td>{money(installment.interestAmount, currencyLabels[detail.loan.currency])}</td>
-                <td>{money(installment.paymentAmount, currencyLabels[detail.loan.currency])}</td>
-                <td>{money(installment.amountPaid, currencyLabels[detail.loan.currency])}</td>
-                <td>{money(installmentPendingAmount(installment), currencyLabels[detail.loan.currency])}</td>
-                <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
-                <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
-              </tr>
-            ))}
+            {detail.installments.map((installment: Installment) => {
+              const mora = lateFeeAllocation(detail, installment);
+              const pending = installmentPendingAmount(installment) + mora.pendingAmount;
+
+              return (
+                <tr key={installment.id}>
+                  <td>{installment.installmentNumber}</td>
+                  <td>{dateOnly(installment.dueDate)}</td>
+                  <td>{money(installment.principalAmount, currencyLabels[detail.loan.currency])}</td>
+                  <td>{money(installment.interestAmount, currencyLabels[detail.loan.currency])}</td>
+                  <td>{money(installment.paymentAmount, currencyLabels[detail.loan.currency])}</td>
+                  <td>{mora.amount > 0 ? money(mora.amount, currencyLabels[detail.loan.currency]) : "-"}</td>
+                  <td>{money(installment.amountPaid + mora.amountPaid, currencyLabels[detail.loan.currency])}</td>
+                  <td>{money(pending, currencyLabels[detail.loan.currency])}</td>
+                  <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
+                  <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -2220,7 +2522,115 @@ function LoanDetailPanel({ detail }: { detail: LoanDetail }) {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function LoanRecalculationDialog({
+  detail,
+  onClose,
+  onApplied
+}: {
+  detail: LoanDetail;
+  onClose: () => void;
+  onApplied: (detail: LoanDetail) => void | Promise<void>;
+}) {
+  const [mode, setMode] = useState<1 | 2>(1);
+  const [effectiveDate, setEffectiveDate] = useState(dateInputValue());
+  const [preview, setPreview] = useState<LoanRecalculationPreview | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const currency = currencyLabels[detail.loan.currency];
+  const payload = { mode, effectiveDate };
+
+  async function loadPreview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      setLoading(true);
+      setError("");
+      setPreview(await api.previewLoanRecalculation(detail.loan.id, payload));
+    } catch (err) {
+      setPreview(null);
+      setError(err instanceof Error ? err.message : "No se pudo calcular la vista previa.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyRecalculation() {
+    try {
+      setLoading(true);
+      setError("");
+      const updatedDetail = await api.recalculateLoan(detail.loan.id, payload);
+      await onApplied(updatedDetail);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo recalcular el préstamo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={() => !loading && onClose()}>
+      <div className="recalculation-modal" role="dialog" aria-modal="true" aria-labelledby="recalculation-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div>
+          <span className="eyebrow">Reestructuración</span>
+          <h2 id="recalculation-title">Recalcular cuotas de {loanDisplayName(detail.loan)}</h2>
+          <p className="muted">Se conservarán las cuotas pagadas. El nuevo plan se calculará únicamente sobre el capital pendiente.</p>
+        </div>
+        <form className="recalculation-form" onSubmit={loadPreview}>
+          <label className="field-label">
+            Modalidad
+            <select
+              value={mode}
+              onChange={(event) => {
+                setMode(Number(event.target.value) as 1 | 2);
+                setPreview(null);
+              }}
+            >
+              <option value={1}>Reducir el monto de las cuotas</option>
+              <option value={2}>Mantener la cuota y reducir el plazo</option>
+            </select>
+          </label>
+          <label className="field-label">
+            Fecha efectiva
+            <input
+              type="date"
+              value={effectiveDate}
+              max={dateInputValue()}
+              onChange={(event) => {
+                setEffectiveDate(event.target.value);
+                setPreview(null);
+              }}
+              required
+            />
+          </label>
+          <p className="recalculation-rule span-2">El préstamo debe estar al día, sin cuotas parciales, vencidas ni mora pendiente.</p>
+          <div className="form-actions span-2">
+            <button type="button" className="ghost" onClick={onClose} disabled={loading}>Cerrar</button>
+            <button type="submit" disabled={loading}>{loading ? "Calculando..." : "Calcular vista previa"}</button>
+          </div>
+        </form>
+        {error && <p className="form-error">{error}</p>}
+        {preview && (
+          <div className="recalculation-preview">
+            <div><span>Capital pendiente</span><strong>{money(preview.outstandingPrincipal, currency)}</strong></div>
+            <div><span>Cuota actual</span><strong>{money(preview.currentInstallmentAmount, currency)}</strong></div>
+            <div><span>Nueva cuota</span><strong>{money(preview.newInstallmentAmount, currency)}</strong></div>
+            <div><span>Pagos restantes</span><strong>{preview.currentRemainingInstallments} → {preview.newRemainingInstallments}</strong></div>
+            <div><span>Interés nuevo</span><strong>{money(preview.newInterest, currency)}</strong></div>
+            <div><span>Nuevo pendiente</span><strong>{money(preview.newPendingTotal, currency)}</strong></div>
+            <div className="span-2"><span>Primera cuota del nuevo plan</span><strong>{dateOnly(preview.firstDueDate)}</strong></div>
+            <div className="recalculation-confirm span-2">
+              <p>Al confirmar se reemplazarán únicamente las cuotas futuras.</p>
+              <button type="button" onClick={() => void applyRecalculation()} disabled={loading}>
+                {loading ? "Recalculando..." : "Confirmar nuevo plan"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Panel({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="panel">
       <h2>{title}</h2>

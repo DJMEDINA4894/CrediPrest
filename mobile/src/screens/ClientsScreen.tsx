@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen } from "../components/ui";
+import { Card, DangerButton, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen, Text } from "../components/ui";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -72,7 +72,7 @@ export function ClientsScreen({ navigation }: Props) {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load()} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load()} />}>
         <ErrorText text={error} />
         <Field
           label="Buscar cliente"
@@ -83,7 +83,9 @@ export function ClientsScreen({ navigation }: Props) {
             load(value);
           }}
         />
-        <PrimaryButton title="Nuevo cliente" onPress={() => navigation.navigate("ClientForm")} />
+        <View style={styles.createAction}>
+          <PrimaryButton title="Nuevo cliente" onPress={() => navigation.navigate("ClientForm")} />
+        </View>
         {clients.length === 0 ? <EmptyState text="No hay clientes para mostrar." /> : null}
         {clients.map((client) => (
           <Card key={client.id}>
@@ -103,7 +105,7 @@ export function ClientsScreen({ navigation }: Props) {
             <View style={styles.actions}>
               <GhostButton title="Editar" onPress={() => navigation.navigate("ClientForm", { client })} />
               <GhostButton title={client.isActive ? "Desactivar" : "Activar"} onPress={() => void setActive(client, !client.isActive)} />
-              <GhostButton title="Eliminar" onPress={() => deleteClient(client)} />
+              <DangerButton title="Eliminar" onPress={() => deleteClient(client)} />
             </View>
           </Card>
         ))}
@@ -113,6 +115,9 @@ export function ClientsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   row: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -156,5 +161,8 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.sm
+  },
+  createAction: {
+    marginBottom: spacing.md
   }
 });

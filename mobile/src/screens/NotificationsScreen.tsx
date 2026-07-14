@@ -1,13 +1,19 @@
 import { useCallback, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, SecondaryButton, Screen } from "../components/ui";
+import { Card, EmptyState, ErrorText, SecondaryButton, Screen, Text } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { Notification } from "../types/models";
 import { dateOnly } from "../utils/format";
 
-export function NotificationsScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, "Notifications">;
+
+export function NotificationsScreen({ navigation }: Props) {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,31 +34,54 @@ export function NotificationsScreen() {
     void load();
   }, [load]));
 
-  async function markAsRead(id: string) {
+  async function markAsRead(notification: Notification) {
+    if (notification.isRead) return;
+
+    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, isRead: true } : item));
     try {
-      await api.markNotificationRead(id);
-      setNotifications((items) => items.map((item) => item.id === id ? { ...item, isRead: true } : item));
+      await api.markNotificationRead(notification.id);
     } catch (err) {
+      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, isRead: false } : item));
       setError(err instanceof Error ? err.message : "No se pudo actualizar el aviso.");
+    }
+  }
+
+  async function openRelatedLoan(notification: Notification) {
+    await markAsRead(notification);
+    if (!notification.relatedLoanId) return;
+
+    if (user?.role === "Client") {
+      navigation.navigate("ClientPortal");
+    } else {
+      navigation.navigate("Payments", { loanId: notification.relatedLoanId });
     }
   }
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
+        <View style={styles.header}>
+          <Text style={styles.heading}>Avisos</Text>
+          <Text style={styles.count}>{notifications.length}</Text>
+        </View>
         {notifications.length === 0 ? <EmptyState text="No tienes avisos pendientes." /> : null}
         {notifications.map((notification) => (
-          <Card key={notification.id}>
-            <View style={styles.row}>
+          <Card key={notification.id} tone={!notification.isRead ? "new" : undefined}>
+            <Pressable accessibilityRole="button" onPress={() => void markAsRead(notification)} style={styles.row}>
               <View style={styles.content}>
                 <Text style={styles.title}>{notification.title}</Text>
                 <Text style={styles.message}>{notification.message}</Text>
-                <Text style={styles.date}>{dateOnly(notification.createdAtUtc)}</Text>
+                <Text style={styles.date}>Vence: {dateOnly(notification.dueDate ?? notification.createdAtUtc)}</Text>
               </View>
               {!notification.isRead ? <Text style={styles.unread}>Nuevo</Text> : null}
-            </View>
-            {!notification.isRead ? <SecondaryButton title="Marcar como leido" onPress={() => void markAsRead(notification.id)} /> : null}
+            </Pressable>
+            {notification.relatedLoanId ? (
+              <SecondaryButton
+                title={user?.role === "Client" ? "Ver mi plan" : "Ver en pagos"}
+                onPress={() => void openRelatedLoan(notification)}
+              />
+            ) : null}
           </Card>
         ))}
       </ScrollView>
@@ -61,7 +90,34 @@ export function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
+  contentContainer: {
+    paddingBottom: spacing.xl
+  },
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md
+  },
+  heading: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "900"
+  },
+  count: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+    minWidth: 26,
+    overflow: "hidden",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    textAlign: "center"
+  },
   row: {
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
     marginBottom: spacing.sm
@@ -90,7 +146,8 @@ const styles = StyleSheet.create({
     color: colors.warn,
     fontSize: 11,
     fontWeight: "900",
+    alignSelf: "flex-start",
     paddingHorizontal: 8,
-    paddingVertical: 4
+    paddingVertical: 3
   }
 });

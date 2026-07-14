@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Metric, Screen } from "../components/ui";
+import { Card, EmptyState, ErrorText, Metric, Screen, Text } from "../components/ui";
 import { colors, spacing } from "../theme/theme";
 import type { Client, Loan } from "../types/models";
 import { currencyLabels, money, statusLabels } from "../utils/format";
@@ -38,7 +38,7 @@ export function ReportsScreen() {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
         <View style={styles.metrics}>
           <Metric title="Cartera C$" value={money(pendingCordobas)} tone="warn" />
@@ -68,6 +68,9 @@ export function ReportsScreen() {
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl
+  },
   metrics: {
     flexDirection: "row",
     flexWrap: "wrap",

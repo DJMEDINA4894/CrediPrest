@@ -1,15 +1,15 @@
 import { useCallback, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Metric, Screen, SecondaryButton } from "../components/ui";
+import { Card, EmptyState, ErrorText, Metric, Screen, SecondaryButton, Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
-import { currencyLabels, dateOnly, installmentPendingAmount, installmentStatusLabels, money } from "../utils/format";
+import { currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
 
 export function ClientPortalScreen() {
   const { user } = useAuth();
@@ -39,7 +39,7 @@ export function ClientPortalScreen() {
 
   return (
     <Screen>
-      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+      <ScrollView contentContainerStyle={styles.contentContainer} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.kicker}>Portal cliente</Text>
@@ -59,15 +59,22 @@ export function ClientPortalScreen() {
           return (
             <Card key={plan.loan.id} title={plan.loan.referenceName ?? "Prestamo"}>
               <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
+              {plan.loan.lateFeeDescription ? <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}. {lateFeePolicyText(plan.loan.paymentFrequency, plan.loan.principalAmount, plan.loan.monthlyInterestRate, Number(plan.loan.lateFeeDescription.replace("%", "")) || 50, currencyLabels[plan.loan.currency], plan.loan.termMonths)}</Text> : null}
               {plan.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(plan.loan.lateFeesPending, currency)}</Text> : null}
-              {plan.installments.map((installment) => (
-                <View key={installment.id} style={styles.item}>
-                  <Text style={styles.itemTitle}>Cuota {installment.installmentNumber} - {installmentStatusLabels[installment.status]}</Text>
-                  <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
-                  <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
-                  <Text style={styles.pending}>Pendiente: {money(installmentPendingAmount(installment), currency)}</Text>
-                </View>
-              ))}
+              {plan.installments.map((installment) => {
+                const mora = lateFeeAllocation(plan, installment);
+                const pending = installmentPendingAmount(installment) + mora.pendingAmount;
+
+                return (
+                  <View key={installment.id} style={styles.item}>
+                    <Text style={styles.itemTitle}>Cuota {installment.installmentNumber} - {installmentStatusLabels[effectiveInstallmentStatus(installment)]}</Text>
+                    <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
+                    <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
+                    {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
+                    <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
+                  </View>
+                );
+              })}
               {plan.charges.length > 0 ? (
                 <View style={styles.chargeBox}>
                   <Text style={styles.itemTitle}>Moras aplicadas</Text>
@@ -87,6 +94,9 @@ export function ClientPortalScreen() {
 }
 
 const styles = StyleSheet.create({
+  contentContainer: {
+    paddingBottom: spacing.xl
+  },
   header: {
     alignItems: "center",
     flexDirection: "row",

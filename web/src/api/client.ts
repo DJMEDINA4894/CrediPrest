@@ -1,4 +1,4 @@
-import type { AppUser, Client, Dashboard, Loan, LoanDetail, LoginResponse, Notification, Payment } from "../types/models";
+import type { AppUser, Client, Dashboard, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification, Payment } from "../types/models";
 
 const LOCAL_API_URL = "http://localhost:5052/api";
 const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
@@ -113,6 +113,10 @@ export const api = {
   loanAgreement: (id: string) => requestBlob(`/loans/${id}/agreement`),
   createLoan: (payload: unknown) => request<LoanDetail>("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (id: string, payload: unknown) => request<LoanDetail>(`/loans/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  previewLoanRecalculation: (id: string, payload: unknown) =>
+    request<LoanRecalculationPreview>(`/loans/${id}/recalculation/preview`, { method: "POST", body: JSON.stringify(payload) }),
+  recalculateLoan: (id: string, payload: unknown) =>
+    request<LoanDetail>(`/loans/${id}/recalculate`, { method: "POST", body: JSON.stringify(payload) }),
   cancelLoan: (id: string) => request<void>(`/loans/${id}/cancel`, { method: "POST" }),
   deleteLoan: (id: string) => request<void>(`/loans/${id}`, { method: "DELETE" }),
   payments: (loanId: string) => request<Payment[]>(`/loans/${loanId}/payments`),

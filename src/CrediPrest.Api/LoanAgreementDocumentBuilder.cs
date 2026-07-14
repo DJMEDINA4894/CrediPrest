@@ -72,7 +72,7 @@ internal static class LoanAgreementDocumentBuilder
         var lenderName = BlankIfMissing(loan.LenderName);
         var lenderIdentification = BlankIfMissing(loan.LenderIdentificationNumber);
         var agreementCity = BlankIfMissing(loan.AgreementCity);
-        var lateFee = FormatLateFee(loan.LateFeeDescription, loan.Currency, currency);
+        var lateFee = FormatLateFee(loan.LateFeeDescription);
         var now = DateTime.Now;
 
         var principalWords = AmountInWords(loan.PrincipalAmount, loan.Currency);
@@ -282,7 +282,7 @@ internal static class LoanAgreementDocumentBuilder
     private static string BlankIfMissing(string? value)
         => string.IsNullOrWhiteSpace(value) ? "________________________" : value.Trim();
 
-    private static string FormatLateFee(string? value, CurrencyType currency, string currencySymbol)
+    private static string FormatLateFee(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -290,7 +290,7 @@ internal static class LoanAgreementDocumentBuilder
         }
 
         return TryReadAmount(value, out var amount)
-            ? $"{FormatMoney(amount, currencySymbol)} {CurrencyName(currency, amount)}"
+            ? $"{amount:0.##}% de la tasa de interés corriente"
             : value.Trim();
     }
 
