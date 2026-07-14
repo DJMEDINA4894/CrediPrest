@@ -24,10 +24,19 @@ jobs:
           dotnet-version: '8.x'
 
       - name: Build with dotnet
-        run: dotnet build --configuration Release
+        run: dotnet build src/CrediPrest.Api/CrediPrest.Api.csproj --configuration Release
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish src/CrediPrest.Api/CrediPrest.Api.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp" --no-build
+
+      - name: Verify agreement template
+        shell: pwsh
+        run: |
+          $template = Join-Path "${{env.DOTNET_ROOT}}/myapp" "Templates/ACUERDO DE PRESTAMO.docx"
+          if (-not (Test-Path -LiteralPath $template)) {
+            throw "The loan agreement template was not included in the publish artifact: $template"
+          }
+          Write-Host "Agreement template included: $template"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -62,4 +71,3 @@ jobs:
           app-name: 'creadiprest'
           slot-name: 'Production'
           package: .
-          
