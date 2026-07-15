@@ -130,7 +130,7 @@ internal sealed class LoanService(
                         dbContext.Installments.AddRange(RecalculateLoan(loan));
                     }
 
-                    var newCharges = ApplyLateFees(loan, DateTime.UtcNow.Date, recalculateExistingCharges: true);
+                    var newCharges = ApplyLateFees(loan, BusinessClock.Today, recalculateExistingCharges: true);
                     dbContext.LoanCharges.AddRange(newCharges);
                     if (lateFeeChanged)
                     {
@@ -409,7 +409,7 @@ internal sealed class LoanService(
 
     private async Task RefreshOverdueOnceAsync(CancellationToken cancellationToken)
     {
-        var today = DateTime.UtcNow.Date;
+        var today = BusinessClock.Today;
         var loans = await dbContext.Loans
             .Include(loan => loan.Client)
             .Include(loan => loan.Installments)
@@ -586,7 +586,7 @@ internal sealed class LoanService(
             throw new InvalidOperationException("Selecciona la fecha del abono extraordinario.");
         }
 
-        if (effectiveDate > DateTime.UtcNow.Date || effectiveDate < loan.StartDate.Date)
+        if (effectiveDate > BusinessClock.Today || effectiveDate < loan.StartDate.Date)
         {
             throw new InvalidOperationException("La fecha del abono debe estar entre la fecha de inicio del préstamo y hoy.");
         }
@@ -614,7 +614,7 @@ internal sealed class LoanService(
             throw new InvalidOperationException("El préstamo no tiene cuotas pendientes para aplicar el abono.");
         }
 
-        if (pendingInstallments.Any(installment => installment.DueDate.Date < DateTime.UtcNow.Date))
+        if (pendingInstallments.Any(installment => installment.DueDate.Date < BusinessClock.Today))
         {
             throw new InvalidOperationException("Debes cancelar las cuotas vencidas antes de realizar un abono extraordinario.");
         }

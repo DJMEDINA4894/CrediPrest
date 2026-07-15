@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
+import { DateField } from "../components/DateField";
 import { Card, EmptyState, ErrorText, Field, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -157,14 +158,14 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
                   keyboardType="number-pad"
                 />
               ) : null}
-              <Field
+              <DateField
                 label="Fecha del abono"
                 value={effectiveDate}
-                onChangeText={(value) => {
+                onChange={(value) => {
                   setEffectiveDate(value);
                   setPreview(null);
                 }}
-                placeholder="AAAA-MM-DD"
+                maximumDate={dateInputValue()}
               />
               <SelectField label="Método de pago" value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} />
               <Field

@@ -4,6 +4,7 @@ import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet,
 import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
+import { DateField } from "../components/DateField";
 import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -204,7 +205,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
         </Card>
 
         <Card title="Registrar pago">
-          <Field label="Fecha de pago" value={paymentDate} onChangeText={setPaymentDate} placeholder="YYYY-MM-DD" />
+          <DateField label="Fecha de pago" value={paymentDate} onChange={setPaymentDate} maximumDate={dateInputValue()} />
           <Field label="Monto pagado" value={amountPaid} onChangeText={setAmountPaid} keyboardType="decimal-pad" placeholder="Ej. 500" />
           <Text style={styles.label}>Metodo de pago</Text>
           <View style={styles.methodRow}>

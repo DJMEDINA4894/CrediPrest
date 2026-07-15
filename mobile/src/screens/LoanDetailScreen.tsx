@@ -116,7 +116,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
                   <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
                   {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
-                  <Text style={styles.muted}>Pagado: {money(installment.amountPaid + mora.amountPaid, currency)}</Text>
+                  <Text style={styles.muted}>Abonado: {money(installment.amountPaid + mora.amountPaid, currency)}</Text>
                   <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
                 </View>
                 );

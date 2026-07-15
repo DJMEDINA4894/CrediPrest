@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CrediPrest.Application.DTOs.Loans;
+using CrediPrest.Application.Services;
 using CrediPrest.Domain.Enums;
 
 namespace CrediPrest.Api;
@@ -111,7 +112,7 @@ internal static class LoanPaymentTablePdfBuilder
                 rowIndex++;
             }
 
-            lines.Add(PdfText(margin, margin, $"Generado: {FormatDate(DateTime.UtcNow)}", 8));
+            lines.Add(PdfText(margin, margin, $"Generado: {FormatDate(BusinessClock.Today)}", 8));
             pages.Add(string.Join('\n', lines));
             pageNumber++;
         }

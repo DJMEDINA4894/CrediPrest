@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using CrediPrest.Application.DTOs.Loans;
+using CrediPrest.Application.Services;
 using CrediPrest.Domain.Enums;
 
 namespace CrediPrest.Api;
@@ -73,7 +74,7 @@ internal static class LoanAgreementDocumentBuilder
         var lenderIdentification = BlankIfMissing(loan.LenderIdentificationNumber);
         var agreementCity = BlankIfMissing(loan.AgreementCity);
         var lateFee = FormatLateFee(loan.LateFeeDescription);
-        var now = DateTime.Now;
+        var now = BusinessClock.Now;
 
         var principalWords = AmountInWords(loan.PrincipalAmount, loan.Currency);
         var principalMoney = FormatMoney(loan.PrincipalAmount, currency);

@@ -94,7 +94,7 @@ internal sealed class NotificationService(
                     cancellationToken);
             }
 
-            var today = DateTime.UtcNow.Date;
+            var today = BusinessClock.Today;
             var users = await dbContext.Users
                 .Where(user => user.IsActive)
                 .ToListAsync(cancellationToken);

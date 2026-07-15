@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import type { TextInputProps, TextProps } from "react-native";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text as NativeText, TextInput, View } from "react-native";
@@ -224,7 +224,30 @@ export function EmptyState({ text }: { text: string }) {
 }
 
 export function ErrorText({ text }: { text?: string }) {
-  return text ? <Text style={styles.error}>{text}</Text> : null;
+  const [visible, setVisible] = useState(Boolean(text));
+
+  useEffect(() => {
+    setVisible(Boolean(text));
+  }, [text]);
+
+  if (!text) return null;
+
+  return (
+    <Modal animationType="fade" transparent visible={visible} onRequestClose={() => setVisible(false)}>
+      <Pressable onPress={() => setVisible(false)} style={styles.errorOverlay}>
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.errorPanel}>
+          <View style={styles.errorIcon}>
+            <Ionicons color="#fff" name="alert" size={22} />
+          </View>
+          <Text style={styles.errorTitle}>No se pudo completar la acción</Text>
+          <Text style={styles.errorMessage}>{text}</Text>
+          <Pressable accessibilityRole="button" onPress={() => setVisible(false)} style={styles.errorButton}>
+            <Text style={styles.errorButtonText}>Entendido</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -512,13 +535,53 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     textAlign: "center"
   },
-  error: {
-    backgroundColor: "#ffe8ea",
+  errorOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 34, 50, 0.62)",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  errorPanel: {
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderColor: "#ef9ea4",
-    borderRadius: 9,
+    borderRadius: 12,
     borderWidth: 1,
-    color: colors.danger,
+    maxWidth: 430,
+    padding: spacing.lg,
+    width: "100%"
+  },
+  errorIcon: {
+    alignItems: "center",
+    backgroundColor: colors.danger,
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
     marginBottom: spacing.sm,
-    padding: spacing.sm
-  }
+    width: 44
+  },
+  errorTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: spacing.sm,
+    textAlign: "center"
+  },
+  errorMessage: {
+    color: colors.muted,
+    lineHeight: 21,
+    marginBottom: spacing.lg,
+    textAlign: "center"
+  },
+  errorButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 9,
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    width: "100%"
+  },
+  errorButtonText: { color: "#fff", fontWeight: "900" }
 });

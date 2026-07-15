@@ -17,6 +17,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El monto pagado debe ser mayor que cero.");
         }
 
+        if (request.PaymentDate.Date > BusinessClock.Today)
+        {
+            throw new InvalidOperationException("La fecha del pago no puede estar en el futuro.");
+        }
+
         await loanService.RefreshOverdueAsync(cancellationToken);
 
         Loan loan;
@@ -54,9 +59,23 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             }
 
             var orderedInstallments = GetInstallmentsInPaymentOrder(loan.Installments, request.InstallmentId);
-            var today = DateTime.UtcNow.Date;
-            var overdueInstallments = orderedInstallments.Where(installment => installment.DueDate.Date < today).ToList();
-            var currentInstallments = orderedInstallments.Where(installment => installment.DueDate.Date >= today).ToList();
+            var paymentDate = request.PaymentDate.Date;
+            var payableThroughDate = GetPayableThroughDate(orderedInstallments, request.InstallmentId, paymentDate);
+            var payableInstallments = orderedInstallments
+                .Where(installment => installment.DueDate.Date <= payableThroughDate)
+                .ToList();
+            if (payableInstallments.Count == 0 && orderedInstallments.Count > 0)
+            {
+                // Permite pagar anticipadamente la próxima cuota, pero no distribuir el excedente a más cuotas futuras.
+                payableInstallments.Add(orderedInstallments[0]);
+            }
+
+            var overdueInstallments = payableInstallments
+                .Where(installment => installment.DueDate.Date < paymentDate)
+                .ToList();
+            var currentInstallments = payableInstallments
+                .Where(installment => installment.DueDate.Date >= paymentDate)
+                .ToList();
             var pendingCharges = loan.Charges
                 .Where(charge => charge.AmountPaid < charge.Amount)
                 .OrderBy(charge => charge.PeriodNumber)
@@ -69,7 +88,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
             if (remainingPayment > 0)
             {
-                throw new InvalidOperationException("El pago excede el saldo pendiente del préstamo.");
+                throw new InvalidOperationException(
+                    "El monto supera las cuotas vencidas o actuales para la fecha seleccionada. No se adelantó el excedente a una cuota futura; registra el monto exacto o utiliza Abono extraordinario para reducir capital.");
             }
 
             if (loan.Installments.All(installment => installment.Status == InstallmentStatus.Paid)
@@ -157,7 +177,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             return InstallmentStatus.Paid;
         }
 
-        return installment.DueDate.Date < DateTime.UtcNow.Date
+        return installment.DueDate.Date < BusinessClock.Today
             ? InstallmentStatus.Overdue
             : InstallmentStatus.Pending;
     }
@@ -317,6 +337,24 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .OrderBy(installment => installment.InstallmentNumber <= selectedInstallment.InstallmentNumber ? 0 : 1)
             .ThenBy(installment => installment.InstallmentNumber)
             .ToList();
+    }
+
+    private static DateTime GetPayableThroughDate(
+        IReadOnlyCollection<Installment> orderedInstallments,
+        Guid? selectedInstallmentId,
+        DateTime paymentDate)
+    {
+        if (!selectedInstallmentId.HasValue)
+        {
+            return paymentDate;
+        }
+
+        var selectedInstallment = orderedInstallments.FirstOrDefault(
+            installment => installment.Id == selectedInstallmentId.Value)
+            ?? throw new KeyNotFoundException("Cuota seleccionada no encontrada.");
+        return selectedInstallment.DueDate.Date > paymentDate
+            ? selectedInstallment.DueDate.Date
+            : paymentDate;
     }
 
     private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)

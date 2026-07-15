@@ -4,6 +4,7 @@ import { Alert, RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
 import { Card, EmptyState, ErrorText, Field, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
+import { DateField } from "../components/DateField";
 import type { Client } from "../types/models";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -135,7 +136,7 @@ export function LoanFormScreen({ route, navigation }: Props) {
           <Field label="Interes mensual (%)" value={monthlyInterestRate} onChangeText={setMonthlyInterestRate} keyboardType="decimal-pad" placeholder="Ej. 10" />
           <SelectField label="Frecuencia de pago" value={paymentFrequency} options={frequencies} onChange={setPaymentFrequency} />
           <Field label={termLabel} value={termMonths} onChangeText={setTermMonths} keyboardType="number-pad" placeholder="Ej. 6" />
-          <Field label="Fecha de inicio" value={startDate} onChangeText={setStartDate} placeholder="AAAA-MM-DD" />
+          <DateField label="Fecha de inicio" value={startDate} onChange={setStartDate} />
           <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
           <Field label="Ciudad del acuerdo" value={agreementCity} onChangeText={setAgreementCity} placeholder="Ej. Managua" />
           <Field

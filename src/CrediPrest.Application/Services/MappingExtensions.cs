@@ -156,7 +156,7 @@ internal static class MappingExtensions
             return InstallmentStatus.Paid;
         }
 
-        if (installment.DueDate.Date < DateTime.UtcNow.Date)
+        if (installment.DueDate.Date < BusinessClock.Today)
         {
             return InstallmentStatus.Overdue;
         }

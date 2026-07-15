@@ -9,7 +9,7 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ICurrent
 {
     public async Task<DashboardDto> GetAsync(CancellationToken cancellationToken = default)
     {
-        var today = DateTime.UtcNow.Date;
+        var today = BusinessClock.Today;
         var weekEnd = today.AddDays(7);
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var monthEnd = monthStart.AddMonths(1);
