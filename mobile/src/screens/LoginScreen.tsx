@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, ErrorText, Field, PrimaryButton, Screen, Text } from "../components/ui";
@@ -37,8 +37,13 @@ export function LoginScreen() {
       <StatusBar style="dark" />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.center}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.kicker}>Gestión financiera</Text>
-          <Text style={styles.title}>CrediPrest</Text>
+          <View style={styles.brand}>
+            <Image accessibilityIgnoresInvertColors source={require("../../assets/icon.png")} style={styles.brandIcon} />
+            <View style={styles.brandCopy}>
+              <Text style={styles.kicker}>Gestión financiera</Text>
+              <Text style={styles.title}>CrediPrest</Text>
+            </View>
+          </View>
           <Text style={styles.subtitle}>Clientes, préstamos, pagos, intereses y mora desde Android.</Text>
 
           <Card>
@@ -94,6 +99,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     paddingTop: spacing.xl
   },
+  brand: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  brandCopy: {
+    flex: 1
+  },
+  brandIcon: {
+    borderRadius: 10,
+    height: 72,
+    width: 72
+  },
   kicker: {
     color: colors.primary,
     fontSize: 12,
@@ -103,7 +121,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.text,
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: "900",
     marginTop: spacing.xs
   },

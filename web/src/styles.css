@@ -125,6 +125,23 @@ td small {
   align-content: center;
 }
 
+.login-brand {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
+
+.login-brand img {
+  border-radius: 8px;
+  height: 4.75rem;
+  object-fit: cover;
+  width: 4.75rem;
+}
+
+.login-brand h1 {
+  margin-bottom: 0;
+}
+
 .login-info-stack {
   display: grid;
   gap: 0.75rem;
@@ -327,6 +344,20 @@ td small {
 
 .sidebar h2 {
   margin: 0.25rem 0 0;
+}
+
+.sidebar-brand {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sidebar-brand img {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  height: 3rem;
+  object-fit: cover;
+  width: 3rem;
 }
 
 .sidebar nav {

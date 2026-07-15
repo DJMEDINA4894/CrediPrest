@@ -173,7 +173,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .WithMany(user => user.Notifications)
                 .HasForeignKey(notification => notification.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(notification => notification.Client)
+                .WithMany(client => client.Notifications)
+                .HasForeignKey(notification => notification.ClientId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(notification => new { notification.UserId, notification.Type, notification.RelatedEntityId }).IsUnique();
+            entity.HasIndex(notification => new { notification.ClientId, notification.Type, notification.RelatedEntityId }).IsUnique();
             entity.Property(notification => notification.Title).HasMaxLength(160).IsRequired();
             entity.Property(notification => notification.Message).HasMaxLength(600).IsRequired();
         });

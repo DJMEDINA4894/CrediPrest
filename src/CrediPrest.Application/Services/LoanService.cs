@@ -929,29 +929,27 @@ internal sealed class LoanService(
         var recipients = await dbContext.Users
             .Where(user => user.IsActive
                 && (user.Role == UserRole.Admin
-                    || user.Role == UserRole.Lender && user.Id == loan.LenderUserId
-                    || user.Role == UserRole.Client && user.ClientId == loan.ClientId))
+                    || user.Role == UserRole.Lender && user.Id == loan.LenderUserId))
             .ToListAsync(cancellationToken);
-        if (recipients.Count == 0)
-        {
-            return;
-        }
 
         var recipientIds = recipients.Select(user => user.Id).ToArray();
         var existingNotifications = await dbContext.Notifications
-            .Where(notification => recipientIds.Contains(notification.UserId)
+            .Where(notification => notification.UserId.HasValue
+                && recipientIds.Contains(notification.UserId.Value)
                 && notification.Type == NotificationType.LateFeeRateChanged
                 && notification.RelatedEntityId == loan.Id)
-            .ToDictionaryAsync(notification => notification.UserId, cancellationToken);
+            .ToDictionaryAsync(notification => notification.UserId!.Value, cancellationToken);
+        var existingClientNotification = await dbContext.Notifications
+            .FirstOrDefaultAsync(notification => notification.ClientId == loan.ClientId
+                && notification.Type == NotificationType.LateFeeRateChanged
+                && notification.RelatedEntityId == loan.Id, cancellationToken);
         var reference = string.IsNullOrWhiteSpace(loan.ReferenceName)
             ? "este préstamo"
             : $"el préstamo {loan.ReferenceName}";
 
         foreach (var recipient in recipients)
         {
-            var message = recipient.Role == UserRole.Client
-                ? $"La tasa de mora de {reference} cambió de {previousLateFee} a {currentLateFee} de la tasa de interés mensual. Las moras pendientes no pagadas se recalcularon y las futuras usarán la nueva tasa."
-                : $"La tasa de mora de {reference}, correspondiente a {loan.Client.FullName}, cambió de {previousLateFee} a {currentLateFee}.";
+            var message = $"La tasa de mora de {reference}, correspondiente a {loan.Client.FullName}, cambió de {previousLateFee} a {currentLateFee}.";
 
             if (existingNotifications.TryGetValue(recipient.Id, out var existing))
             {
@@ -970,6 +968,27 @@ internal sealed class LoanService(
                 RelatedEntityId = loan.Id,
                 Title = "Tasa de mora actualizada",
                 Message = message
+            });
+        }
+
+        var clientMessage = $"La tasa de mora de {reference} cambió de {previousLateFee} a {currentLateFee} de la tasa de interés mensual. Las moras pendientes no pagadas se recalcularon y las futuras usarán la nueva tasa.";
+        if (existingClientNotification is not null)
+        {
+            existingClientNotification.Title = "Tasa de mora actualizada";
+            existingClientNotification.Message = clientMessage;
+            existingClientNotification.IsRead = false;
+            existingClientNotification.ReadAtUtc = null;
+            existingClientNotification.CreatedAtUtc = DateTime.UtcNow;
+        }
+        else
+        {
+            dbContext.Notifications.Add(new Notification
+            {
+                ClientId = loan.ClientId,
+                Type = NotificationType.LateFeeRateChanged,
+                RelatedEntityId = loan.Id,
+                Title = "Tasa de mora actualizada",
+                Message = clientMessage
             });
         }
     }

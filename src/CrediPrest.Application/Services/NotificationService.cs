@@ -15,10 +15,12 @@ internal sealed class NotificationService(
 {
     private static readonly SemaphoreSlim PaymentNotificationGate = new(1, 1);
 
-    public async Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, Guid? clientId, CancellationToken cancellationToken = default)
     {
         var notifications = await dbContext.Notifications
-            .Where(notification => notification.UserId == userId)
+            .Where(notification => clientId.HasValue
+                ? notification.ClientId == clientId
+                : notification.UserId == userId)
             .ToListAsync(cancellationToken);
 
         var relatedEntityIds = notifications
@@ -66,10 +68,11 @@ internal sealed class NotificationService(
         await EnsurePaymentNotificationsAsync(cancellationToken);
     }
 
-    public async Task MarkAsReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default)
+    public async Task MarkAsReadAsync(Guid userId, Guid? clientId, Guid notificationId, CancellationToken cancellationToken = default)
     {
         var notification = await dbContext.Notifications
-            .FirstOrDefaultAsync(item => item.Id == notificationId && item.UserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(item => item.Id == notificationId
+                && (clientId.HasValue ? item.ClientId == clientId : item.UserId == userId), cancellationToken)
             ?? throw new KeyNotFoundException("Notificación no encontrada.");
 
         notification.IsRead = true;
@@ -97,9 +100,6 @@ internal sealed class NotificationService(
                 .ToListAsync(cancellationToken);
             var staffUsers = users
                 .Where(user => user.Role is UserRole.Admin or UserRole.Lender)
-                .ToList();
-            var clientUsers = users
-                .Where(user => user.Role == UserRole.Client && user.ClientId.HasValue)
                 .ToList();
 
             var paymentNotifications = await dbContext.Notifications
@@ -140,10 +140,13 @@ internal sealed class NotificationService(
                     await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, staffMessage, cancellationToken);
                 }
 
-                foreach (var user in clientUsers.Where(user => user.ClientId == installment.Loan.ClientId))
-                {
-                    await AddNotificationIfMissingAsync(user.Id, type, installment.Id, title, clientMessage, cancellationToken);
-                }
+                await AddClientNotificationIfMissingAsync(
+                    installment.Loan.ClientId,
+                    type,
+                    installment.Id,
+                    title,
+                    clientMessage,
+                    cancellationToken);
 
                 foreach (var notification in paymentNotifications.Where(notification => notification.RelatedEntityId == installment.Id && notification.Type != type))
                 {
@@ -306,10 +309,51 @@ internal sealed class NotificationService(
             await AddNotificationIfMissingAsync(user.Id, type, relatedEntityId, title, staffMessage, cancellationToken);
         }
 
-        foreach (var user in users.Where(user => user.Role == UserRole.Client && user.ClientId == loan.ClientId))
+        await AddClientNotificationIfMissingAsync(
+            loan.ClientId,
+            type,
+            relatedEntityId,
+            title,
+            clientMessage,
+            cancellationToken);
+    }
+
+    private async Task AddClientNotificationIfMissingAsync(
+        Guid clientId,
+        NotificationType type,
+        Guid relatedEntityId,
+        string title,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.Notifications.FirstOrDefaultAsync(
+            notification => notification.ClientId == clientId
+                && notification.Type == type
+                && notification.RelatedEntityId == relatedEntityId,
+            cancellationToken);
+
+        if (existing is not null)
         {
-            await AddNotificationIfMissingAsync(user.Id, type, relatedEntityId, title, clientMessage, cancellationToken);
+            var contentChanged = existing.Title != title || existing.Message != message;
+            existing.Title = title;
+            existing.Message = message;
+            if (contentChanged)
+            {
+                existing.IsRead = false;
+                existing.ReadAtUtc = null;
+                existing.CreatedAtUtc = DateTime.UtcNow;
+            }
+            return;
         }
+
+        dbContext.Notifications.Add(new Notification
+        {
+            ClientId = clientId,
+            Type = type,
+            RelatedEntityId = relatedEntityId,
+            Title = title,
+            Message = message
+        });
     }
 
     private static DateTime GetRelatedDate(

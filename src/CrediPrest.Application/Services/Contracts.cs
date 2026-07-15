@@ -51,8 +51,8 @@ public interface IDashboardService
 
 public interface INotificationService
 {
-    Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, CancellationToken cancellationToken = default);
-    Task MarkAsReadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<NotificationDto>> ListAsync(Guid userId, Guid? clientId, CancellationToken cancellationToken = default);
+    Task MarkAsReadAsync(Guid userId, Guid? clientId, Guid notificationId, CancellationToken cancellationToken = default);
     Task RefreshAutomaticAsync(CancellationToken cancellationToken = default);
 }
 

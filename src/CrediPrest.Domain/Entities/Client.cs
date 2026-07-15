@@ -24,4 +24,5 @@ public sealed class Client
     public bool IsActive { get; set; } = true;
     public DateTime RegisteredAtUtc { get; set; } = DateTime.UtcNow;
     public List<Loan> Loans { get; set; } = [];
+    public List<Notification> Notifications { get; set; } = [];
 }

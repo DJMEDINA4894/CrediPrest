@@ -12,13 +12,14 @@ namespace CrediPrest.Api.Controllers;
 public sealed class NotificationsController(INotificationService notificationService) : ControllerBase
 {
     [HttpGet]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<ActionResult<IReadOnlyList<NotificationDto>>> List(CancellationToken cancellationToken)
-        => Ok(await notificationService.ListAsync(GetCurrentUserId(), cancellationToken));
+        => Ok(await notificationService.ListAsync(GetCurrentUserId(), GetCurrentClientId(), cancellationToken));
 
     [HttpPost("{id:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid id, CancellationToken cancellationToken)
     {
-        await notificationService.MarkAsReadAsync(GetCurrentUserId(), id, cancellationToken);
+        await notificationService.MarkAsReadAsync(GetCurrentUserId(), GetCurrentClientId(), id, cancellationToken);
         return NoContent();
     }
 
@@ -30,4 +31,9 @@ public sealed class NotificationsController(INotificationService notificationSer
 
         return Guid.Parse(userId);
     }
+
+    private Guid? GetCurrentClientId()
+        => User.IsInRole("Client") && Guid.TryParse(User.FindFirstValue("clientId"), out var clientId)
+            ? clientId
+            : null;
 }

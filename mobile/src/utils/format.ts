@@ -34,6 +34,18 @@ export function dateOnly(value: string) {
   return new Intl.DateTimeFormat("es-NI", { day: "numeric", month: "long", year: "numeric" }).format(date);
 }
 
+export function monthYear(value: string) {
+  const datePart = value.split("T")[0];
+  const [year, month, day] = datePart.split("-").map(Number);
+  const date = year && month ? new Date(year, month - 1, day || 1) : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-NI", { month: "long", year: "numeric" }).format(date);
+}
+
 export function installmentPendingAmount(installment: Installment) {
   return Math.max(0, installment.paymentAmount - installment.amountPaid);
 }
@@ -146,5 +158,13 @@ export function effectiveInstallmentStatus(installment: Installment): Installmen
 }
 
 export function dateInputValue(value?: string) {
-  return value ? value.slice(0, 10) : new Date().toISOString().slice(0, 10);
+  if (value) {
+    return value.slice(0, 10);
+  }
+
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

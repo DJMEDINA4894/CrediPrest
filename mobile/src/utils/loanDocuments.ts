@@ -2,7 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Sharing from "expo-sharing";
 import { Platform } from "react-native";
-import { api } from "../api/client";
+import { api, CONNECTION_ERROR_MESSAGE } from "../api/client";
 import type { LoanDetail } from "../types/models";
 
 function safeFileName(value: string) {
@@ -22,7 +22,13 @@ async function downloadVerifiedDocument(
   documentName: string
 ) {
   await FileSystem.deleteAsync(destination, { idempotent: true });
-  const result = await FileSystem.downloadAsync(source.uri, destination, { headers: source.headers });
+  let result: FileSystem.FileSystemDownloadResult;
+
+  try {
+    result = await FileSystem.downloadAsync(source.uri, destination, { headers: source.headers });
+  } catch {
+    throw new Error(CONNECTION_ERROR_MESSAGE);
+  }
 
   if (result.status < 200 || result.status >= 300) {
     await FileSystem.deleteAsync(destination, { idempotent: true });

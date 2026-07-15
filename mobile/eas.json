@@ -6,12 +6,18 @@
     "preview": {
       "distribution": "internal",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api"
+      }
     }
   }
 }

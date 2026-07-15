@@ -1105,8 +1105,13 @@ export default function App() {
       <main className="login-shell">
         <section className="login-panel">
           <div className="login-copy">
-            <span className="eyebrow">Gestión financiera</span>
-            <h1>CrediPrest</h1>
+            <div className="login-brand">
+              <img src="/crediprest-icon.png" alt="" aria-hidden="true" />
+              <div>
+                <span className="eyebrow">Gestión financiera</span>
+                <h1>CrediPrest</h1>
+              </div>
+            </div>
             <p>Control de clientes, préstamos, cuotas, pagos e intereses en córdobas y dólares.</p>
             <div className="login-info-stack">
               <div className="login-info-card">
@@ -1222,9 +1227,12 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
-          <span className="eyebrow">CrediPrest</span>
-          <h2>Finanzas</h2>
+        <div className="sidebar-brand">
+          <img src="/crediprest-icon.png" alt="" aria-hidden="true" />
+          <div>
+            <span className="eyebrow">CrediPrest</span>
+            <h2>Finanzas</h2>
+          </div>
         </div>
         <nav>
           {navigationItems.map((item) => (

@@ -1,7 +1,7 @@
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
-import { Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { ClientPortalScreen } from "../screens/ClientPortalScreen";
 import { ClientFormScreen } from "../screens/ClientFormScreen";
@@ -44,8 +44,15 @@ export function AppNavigator() {
           headerTintColor: "#fff",
           headerTitleStyle: { fontWeight: "900" },
           headerRight: user ? () => (
-            <Pressable accessibilityLabel="Cerrar sesion" hitSlop={10} onPress={() => void signOut()} style={styles.signOut}>
-              <Text style={styles.signOutText}>Salir</Text>
+            <Pressable
+              accessibilityHint="Cierra tu cuenta y regresa al inicio de sesión"
+              accessibilityLabel="Cerrar sesión"
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={() => void signOut()}
+              style={({ pressed }) => [styles.signOut, pressed && styles.signOutPressed]}
+            >
+              <Ionicons color="#fff" name="log-out-outline" size={23} />
             </Pressable>
           ) : undefined
         }}
@@ -86,15 +93,15 @@ export function AppNavigator() {
 
 const styles = StyleSheet.create({
   signOut: {
+    alignItems: "center",
     borderColor: "#9ccfc7",
     borderRadius: 8,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6
+    height: 38,
+    justifyContent: "center",
+    width: 40
   },
-  signOutText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "900"
+  signOutPressed: {
+    opacity: 0.75
   }
 });

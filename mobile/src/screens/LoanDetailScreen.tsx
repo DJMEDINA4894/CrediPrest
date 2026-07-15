@@ -7,7 +7,7 @@ import { Card, EmptyState, ErrorText, GhostButton, InfoTooltip, Screen, Text } f
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
-import { canMakeExtraordinaryPayment, currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money } from "../utils/format";
+import { canMakeExtraordinaryPayment, currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money, monthYear } from "../utils/format";
 import { shareLoanAgreement, shareLoanPaymentPlan } from "../utils/loanDocuments";
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanDetail">;
@@ -127,7 +127,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               <Card title="Moras aplicadas">
                 {detail.charges.map((charge) => (
                   <View key={charge.id} style={styles.item}>
-                    <Text style={styles.itemTitle}>Periodo {charge.periodNumber}</Text>
+                    <Text style={styles.itemTitle}>Mora de {monthYear(charge.periodStartDate)}</Text>
                     <Text style={styles.muted}>Desde {dateOnly(charge.periodStartDate)} hasta {dateOnly(charge.periodEndDate)}</Text>
                     <Text style={styles.muted}>Monto: {money(charge.amount, currency)}</Text>
                     <Text style={styles.pending}>Pendiente: {money(charge.pendingAmount, currency)}</Text>

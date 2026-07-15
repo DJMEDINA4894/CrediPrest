@@ -2,6 +2,7 @@ import type { AppUser, Client, Dashboard, Loan, LoanDetail, LoanRecalculationPre
 
 const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? PRODUCTION_API_URL;
+export const CONNECTION_ERROR_MESSAGE = "No se pudo conectar. Revisa tu conexión a internet o Wi-Fi e inténtalo nuevamente.";
 
 export class ApiRequestError extends Error {
   constructor(message: string, public readonly statusCode: number) {
@@ -17,14 +18,20 @@ export function setApiToken(token: string | null) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...options.headers
-    }
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...options.headers
+      }
+    });
+  } catch {
+    throw new ApiRequestError(CONNECTION_ERROR_MESSAGE, 0);
+  }
 
   if (!response.ok) {
     const fallbackMessage = response.status === 401
@@ -60,7 +67,13 @@ export const api = {
       body: JSON.stringify({ identificationOrPhone })
     }),
   dashboard: () => request<Dashboard>("/dashboard"),
-  notifications: () => request<Notification[]>("/notifications"),
+  notifications: () => request<Notification[]>(`/notifications?fresh=${Date.now()}`, {
+    cache: "no-store",
+    headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache"
+    }
+  }),
   markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
   clientPaymentPlans: () => request<LoanDetail[]>("/client-portal/payment-plans"),
   users: () => request<AppUser[]>("/users"),
