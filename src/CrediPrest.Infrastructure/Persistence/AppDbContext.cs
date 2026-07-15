@@ -203,7 +203,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 new PaymentMethodCatalog { Id = (int)PaymentMethod.Cash, Name = "Efectivo" },
                 new PaymentMethodCatalog { Id = (int)PaymentMethod.Transfer, Name = "Transferencia" },
                 new PaymentMethodCatalog { Id = (int)PaymentMethod.Deposit, Name = "Deposito" },
-                new PaymentMethodCatalog { Id = (int)PaymentMethod.Other, Name = "Otro" });
+                new PaymentMethodCatalog { Id = (int)PaymentMethod.Other, Name = "Otro" },
+                new PaymentMethodCatalog { Id = (int)PaymentMethod.Kash, Name = "Kash" });
         });
     }
 }

@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
 import { Card, EmptyState, ErrorText, Metric, Screen, Text } from "../components/ui";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { colors, spacing } from "../theme/theme";
 import type { Client, Loan } from "../types/models";
 import { currencyLabels, money, statusLabels } from "../utils/format";
@@ -57,7 +58,10 @@ export function ReportsScreen() {
                 <Text style={[styles.status, loan.status === 3 && styles.overdue]}>{statusLabels[loan.status]}</Text>
               </View>
               <Text style={styles.detail}>{loan.referenceName ?? "Prestamo"}</Text>
-              <Text style={styles.pending}>Debe {money(loan.pendingBalance, currencyLabels[loan.currency])}</Text>
+              <View style={styles.pendingRow}>
+                <Text style={styles.pending}>Debe {money(loan.pendingBalance, currencyLabels[loan.currency])}</Text>
+                <PaidBreakdownInfo principal={loan.paidPrincipal} interest={loan.paidInterest} currency={currencyLabels[loan.currency]} />
+              </View>
               {loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente {money(loan.lateFeesPending, currencyLabels[loan.currency])}</Text> : null}
             </View>
           ))}
@@ -113,6 +117,11 @@ const styles = StyleSheet.create({
   pending: {
     color: colors.warn,
     fontWeight: "900",
+  },
+  pendingRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
     marginTop: 4
   },
   late: {

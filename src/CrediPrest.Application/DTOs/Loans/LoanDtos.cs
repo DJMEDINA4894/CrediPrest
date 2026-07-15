@@ -52,6 +52,8 @@ public sealed record LoanDto(
     decimal TotalInterest,
     decimal TotalToPay,
     decimal TotalPaid,
+    decimal PaidPrincipal,
+    decimal PaidInterest,
     decimal LateFeesTotal,
     decimal LateFeesPaid,
     decimal LateFeesPending,

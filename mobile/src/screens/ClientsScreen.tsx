@@ -3,6 +3,7 @@ import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-nativ
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
 import { Card, DangerButton, EmptyState, ErrorText, Field, GhostButton, PrimaryButton, Screen, Text } from "../components/ui";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -99,9 +100,18 @@ export function ClientsScreen({ navigation }: Props) {
                 {client.isActive ? "Activo" : "Inactivo"}
               </Text>
             </View>
-            <Text style={styles.debt}>
-              Debe: {client.pendingCordobas > 0 ? money(client.pendingCordobas) : money(client.pendingUsd, "USD")}
-            </Text>
+            <View style={styles.debtRow}>
+              <Text style={styles.debt}>
+                Debe: {client.pendingCordobas > 0 && client.pendingUsd > 0
+                  ? `${money(client.pendingCordobas)} / ${money(client.pendingUsd, "USD")}`
+                  : client.pendingUsd > 0
+                    ? money(client.pendingUsd, "USD")
+                    : money(client.pendingCordobas)}
+              </Text>
+              <PaidBreakdownInfo
+                message={`Córdobas: capital ${money(client.paidPrincipalCordobas ?? 0)} e interés ${money(client.paidInterestCordobas ?? 0)}.\nDólares: capital ${money(client.paidPrincipalUsd ?? 0, "USD")} e interés ${money(client.paidInterestUsd ?? 0, "USD")}.`}
+              />
+            </View>
             <View style={styles.actions}>
               <GhostButton title="Editar" onPress={() => navigation.navigate("ClientForm", { client })} />
               <GhostButton title={client.isActive ? "Desactivar" : "Activar"} onPress={() => void setActive(client, !client.isActive)} />
@@ -153,7 +163,12 @@ const styles = StyleSheet.create({
   },
   debt: {
     color: colors.warn,
-    fontWeight: "900",
+    fontWeight: "900"
+  },
+  debtRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
     marginTop: spacing.sm
   },
   actions: {

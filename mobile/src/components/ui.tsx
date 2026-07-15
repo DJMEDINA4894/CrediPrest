@@ -210,10 +210,13 @@ export function SelectField({
   );
 }
 
-export function Metric({ title, value, tone }: { title: string; value: string; tone?: "good" | "warn" | "danger" }) {
+export function Metric({ title, value, tone, titleAccessory }: { title: string; value: string; tone?: "good" | "warn" | "danger"; titleAccessory?: ReactNode }) {
   return (
     <View style={styles.metric}>
-      <Text style={styles.metricTitle}>{title}</Text>
+      <View style={styles.metricTitleRow}>
+        <Text style={styles.metricTitle}>{title}</Text>
+        {titleAccessory}
+      </View>
       <Text style={[styles.metricValue, tone ? styles[tone] : undefined]}>{value}</Text>
     </View>
   );
@@ -514,6 +517,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginBottom: spacing.xs
+  },
+  metricTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
   },
   metricValue: {
     color: colors.text,

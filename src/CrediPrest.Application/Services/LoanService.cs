@@ -198,10 +198,10 @@ internal sealed class LoanService(
             throw new InvalidOperationException("Selecciona un método de pago válido.");
         }
 
-        if (request.PaymentMethod is PaymentMethod.Transfer or PaymentMethod.Deposit
+        if (request.PaymentMethod is PaymentMethod.Transfer or PaymentMethod.Deposit or PaymentMethod.Kash
             && string.IsNullOrWhiteSpace(request.ReferenceNumber))
         {
-            throw new InvalidOperationException("Ingresa la referencia de la transferencia o depósito.");
+            throw new InvalidOperationException("Ingresa la referencia de la transferencia, depósito o Kash.");
         }
 
         await LoanDataOperationLock.Gate.WaitAsync(cancellationToken);

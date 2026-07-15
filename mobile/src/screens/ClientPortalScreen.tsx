@@ -3,6 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-n
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../api/client";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { Card, EmptyState, ErrorText, InfoTooltip, Metric, Screen, SecondaryButton, Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
@@ -45,6 +46,10 @@ export function ClientPortalScreen() {
 
   const pendingCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
   const pendingUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
+  const paidPrincipalCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
+  const paidInterestCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
+  const paidPrincipalUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
+  const paidInterestUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
 
   async function downloadPlan(plan: LoanDetail) {
     try {
@@ -66,30 +71,45 @@ export function ClientPortalScreen() {
             <Text style={styles.kicker}>Portal cliente</Text>
             <Text style={styles.title}>{user?.fullName}</Text>
           </View>
-          <Pressable
-            accessibilityLabel={`Notificaciones${unreadNotifications > 0 ? `, ${unreadNotifications} nuevas` : ""}`}
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => navigation.navigate("Notifications")}
-            style={({ pressed }) => [styles.notificationButton, pressed && styles.notificationButtonPressed]}
-          >
-            <Ionicons color="#fff" name="notifications" size={24} />
+          <View style={styles.notificationSlot}>
+            <Pressable
+              accessibilityLabel={`Notificaciones${unreadNotifications > 0 ? `, ${unreadNotifications} nuevas` : ""}`}
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={() => navigation.navigate("Notifications")}
+              style={({ pressed }) => [styles.notificationButton, pressed && styles.notificationButtonPressed]}
+            >
+              <Ionicons color="#fff" name="notifications" size={24} />
+            </Pressable>
             {unreadNotifications > 0 ? (
               <Text style={styles.notificationBadge}>{Math.min(unreadNotifications, 99)}</Text>
             ) : null}
-          </Pressable>
+          </View>
         </View>
         <ErrorText text={error} />
         <View style={styles.metrics}>
-          <Metric title="Debe C$" value={money(pendingCordobas)} tone="warn" />
-          <Metric title="Debe USD" value={money(pendingUsd, "USD")} tone="warn" />
+          <Metric
+            title="Debe C$"
+            value={money(pendingCordobas)}
+            tone="warn"
+            titleAccessory={<PaidBreakdownInfo principal={paidPrincipalCordobas} interest={paidInterestCordobas} currency="C$" />}
+          />
+          <Metric
+            title="Debe USD"
+            value={money(pendingUsd, "USD")}
+            tone="warn"
+            titleAccessory={<PaidBreakdownInfo principal={paidPrincipalUsd} interest={paidInterestUsd} currency="USD" />}
+          />
         </View>
         {plans.length === 0 ? <EmptyState text="No tienes prestamos activos registrados para mostrar." /> : null}
         {plans.map((plan) => {
           const currency = currencyLabels[plan.loan.currency];
           return (
             <Card key={plan.loan.id} title={plan.loan.referenceName ?? "Prestamo"}>
-              <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
+              <View style={styles.dueRow}>
+                <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
+                <PaidBreakdownInfo principal={plan.loan.paidPrincipal} interest={plan.loan.paidInterest} currency={currency} />
+              </View>
               {plan.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}</Text>
@@ -167,6 +187,14 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1
   },
+  notificationSlot: {
+    alignItems: "flex-end",
+    height: 54,
+    justifyContent: "flex-end",
+    overflow: "visible",
+    position: "relative",
+    width: 54
+  },
   notificationButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
@@ -187,14 +215,16 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 10,
     fontWeight: "900",
+    lineHeight: 14,
     minWidth: 20,
     overflow: "hidden",
     paddingHorizontal: 4,
     paddingVertical: 1,
     position: "absolute",
-    right: -4,
+    right: 0,
     textAlign: "center",
-    top: -5
+    top: 0,
+    zIndex: 2
   },
   kicker: {
     color: colors.primary,
@@ -216,6 +246,11 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900"
+  },
+  dueRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
   },
   late: {
     color: colors.danger,

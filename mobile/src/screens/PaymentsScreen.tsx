@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
 import { DateField } from "../components/DateField";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -24,7 +25,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
   const [amountPaid, setAmountPaid] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<1 | 2 | 3 | 4>(1);
+  const [paymentMethod, setPaymentMethod] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [receipt, setReceipt] = useState<{ base64: string; fileName: string; contentType: string; uri: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,7 +105,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
         paymentMethod,
         referenceNumber: referenceNumber || undefined,
         notes: notes || undefined,
-        ...(paymentMethod === 2 || paymentMethod === 3 ? {
+        ...(paymentMethod === 2 || paymentMethod === 3 || paymentMethod === 5 ? {
           receiptImageBase64: receipt?.base64,
           receiptFileName: receipt?.fileName,
           receiptContentType: receipt?.contentType
@@ -172,8 +173,8 @@ export function PaymentsScreen({ route, navigation }: Props) {
   }
 
   const currency = selectedLoan ? currencyLabels[selectedLoan.currency] : "C$";
-  const needsReceipt = paymentMethod === 2 || paymentMethod === 3;
-  const paymentMethodLabels = { 1: "Efectivo", 2: "Transferencia", 3: "Depósito", 4: "Otro" } as const;
+  const needsReceipt = paymentMethod === 2 || paymentMethod === 3 || paymentMethod === 5;
+  const paymentMethodLabels = { 1: "Efectivo", 2: "Transferencia", 3: "Depósito", 4: "Otro", 5: "Kash" } as const;
   const loanOptions = loans.map((loan) => ({
     value: loan.id,
     label: `${loan.clientName}${loan.referenceName ? ` - ${loan.referenceName}` : ""} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}`
@@ -205,7 +206,10 @@ export function PaymentsScreen({ route, navigation }: Props) {
             <>
               <Text style={styles.loanName}>{selectedLoan.clientName}</Text>
               {selectedLoan.referenceName ? <Text style={styles.muted}>{selectedLoan.referenceName}</Text> : null}
-              <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
+              <View style={styles.dueRow}>
+                <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
+                <PaidBreakdownInfo principal={selectedLoan.paidPrincipal} interest={selectedLoan.paidInterest} currency={currency} />
+              </View>
               {selectedLoan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {selectedLoan.lateFeeDescription}</Text>
@@ -242,12 +246,13 @@ export function PaymentsScreen({ route, navigation }: Props) {
               [1, "Efectivo"],
               [2, "Transferencia"],
               [3, "Deposito"],
-              [4, "Otro"]
+              [4, "Otro"],
+              [5, "Kash"]
             ].map(([value, label]) => (
               <Pressable
                 key={String(value)}
                 style={[styles.method, paymentMethod === value && styles.methodActive]}
-                onPress={() => setPaymentMethod(value as 1 | 2 | 3 | 4)}
+                onPress={() => setPaymentMethod(value as 1 | 2 | 3 | 4 | 5)}
               >
                 <Text style={[styles.methodText, paymentMethod === value && styles.methodTextActive]}>{label}</Text>
               </Pressable>
@@ -256,7 +261,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
           <Field label="Referencia" value={referenceNumber} onChangeText={setReferenceNumber} placeholder="Numero de referencia o comprobante" />
           {needsReceipt ? (
             <View style={styles.receiptSection}>
-              <Text style={styles.label}>Imagen del comprobante</Text>
+              <Text style={styles.label}>{paymentMethod === 5 ? "Comprobante de Kash" : "Imagen del comprobante"}</Text>
               <Text style={styles.receiptHint}>Opcional. JPG, PNG o WEBP de hasta 5 MB.</Text>
               <View style={styles.receiptActions}>
                 <GhostButton title="Elegir imagen" onPress={() => void chooseReceipt("library")} />
@@ -352,6 +357,11 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900",
+  },
+  dueRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
     marginTop: spacing.sm
   },
   late: {

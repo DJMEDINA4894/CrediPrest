@@ -2,7 +2,7 @@ export type CurrencyType = 1 | 2;
 export type PaymentFrequency = 1 | 2 | 3;
 export type LoanStatus = 1 | 2 | 3;
 export type InstallmentStatus = 1 | 2 | 3 | 4;
-export type PaymentMethod = 1 | 2 | 3 | 4;
+export type PaymentMethod = 1 | 2 | 3 | 4 | 5;
 
 export interface LoginResponse {
   token: string;
@@ -35,6 +35,10 @@ export interface Client {
   activeLoans: number;
   pendingCordobas: number;
   pendingUsd: number;
+  paidPrincipalCordobas: number;
+  paidInterestCordobas: number;
+  paidPrincipalUsd: number;
+  paidInterestUsd: number;
 }
 
 export interface Loan {
@@ -55,6 +59,8 @@ export interface Loan {
   totalInterest: number;
   totalToPay: number;
   totalPaid: number;
+  paidPrincipal: number;
+  paidInterest: number;
   lateFeesTotal: number;
   lateFeesPaid: number;
   lateFeesPending: number;

@@ -157,6 +157,58 @@ function clientDebt(client: Client) {
   return money(client.pendingCordobas);
 }
 
+function paidBreakdownText(principal: number, interest: number, currency: string) {
+  return (
+    <>
+      Capital pagado: <strong>{money(principal ?? 0, currency)}</strong>
+      <br />
+      Interés pagado: <strong>{money(interest ?? 0, currency)}</strong>
+    </>
+  );
+}
+
+function clientPaidBreakdownText(client: Client) {
+  return (
+    <>
+      Córdobas: capital <strong>{money(client.paidPrincipalCordobas ?? 0)}</strong> e interés <strong>{money(client.paidInterestCordobas ?? 0)}</strong>.
+      <br />
+      Dólares: capital <strong>{money(client.paidPrincipalUsd ?? 0, "USD")}</strong> e interés <strong>{money(client.paidInterestUsd ?? 0, "USD")}</strong>.
+    </>
+  );
+}
+
+function installmentPaidBreakdown(installment: Installment) {
+  const paidInterest = Math.min(Math.max(0, installment.amountPaid), installment.interestAmount);
+  const paidPrincipal = Math.min(
+    installment.principalAmount,
+    Math.max(0, installment.amountPaid - paidInterest)
+  );
+
+  return { paidPrincipal, paidInterest };
+}
+
+function DebtWithInfo({
+  children,
+  principal,
+  interest,
+  currency
+}: {
+  children: React.ReactNode;
+  principal: number;
+  interest: number;
+  currency: string;
+}) {
+  return (
+    <span className="debt-with-info">
+      {children}
+      <InfoTooltip
+        ariaLabel="Ver capital e interés pagados"
+        text={paidBreakdownText(principal, interest, currency)}
+      />
+    </span>
+  );
+}
+
 function portfolioMoney(cordobas: number, usd: number) {
   if (cordobas > 0 && usd > 0) {
     return `${money(cordobas)} / ${money(usd, "USD")}`;
@@ -1683,7 +1735,12 @@ function ClientsView(props: {
                   </td>
                   <td><span className={`badge client-${client.isActive ? "active" : "inactive"}`}>{client.isActive ? "Activo" : "Inactivo"}</span></td>
                   <td>{client.activeLoans}</td>
-                  <td>{clientDebt(client)}</td>
+                  <td>
+                    <span className="debt-with-info">
+                      {clientDebt(client)}
+                      <InfoTooltip ariaLabel="Ver capital e interés pagados" text={clientPaidBreakdownText(client)} />
+                    </span>
+                  </td>
                   <td className="row-actions">
                     <button type="button" className="ghost" onClick={() => props.setEditingClient(client)}>Editar</button>
                     {client.isActive ? (
@@ -1858,7 +1915,11 @@ function LoansView(props: {
                     <td>{loan.monthlyInterestRate}% mensual</td>
                     <td>{loan.termMonths}</td>
                     <td><span className={`badge status-${loan.status}`}>{statusLabels[loan.status]}</span></td>
-                    <td>{money(loan.pendingBalance, currencyLabels[loan.currency])}</td>
+                    <td>
+                      <DebtWithInfo principal={loan.paidPrincipal} interest={loan.paidInterest} currency={currencyLabels[loan.currency]}>
+                        {money(loan.pendingBalance, currencyLabels[loan.currency])}
+                      </DebtWithInfo>
+                    </td>
                     <td className="row-actions">
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
                       <button type="button" className="ghost" onClick={() => props.startNewLoan(loan.clientId)}>Nuevo</button>
@@ -1983,15 +2044,16 @@ function PaymentsView(props: {
               <option value="2">Transferencia</option>
               <option value="3">Depósito</option>
               <option value="4">Otro</option>
+              <option value="5">Kash</option>
             </select>
           </label>
           <label className="field-label">
             Referencia
             <input name="referenceNumber" placeholder="Referencia o comprobante" />
           </label>
-          {(paymentMethod === 2 || paymentMethod === 3) && (
+          {(paymentMethod === 2 || paymentMethod === 3 || paymentMethod === 5) && (
             <label className="field-label">
-              Imagen del comprobante
+              {paymentMethod === 5 ? "Comprobante de Kash" : "Imagen del comprobante"}
               <input name="receiptImage" type="file" accept="image/jpeg,image/png,image/webp" />
               <small className="form-hint">Opcional. JPG, PNG o WEBP de hasta 5 MB.</small>
             </label>
@@ -2031,12 +2093,25 @@ function ClientPortalView({ plans, focusPlanId }: { plans: LoanDetail[]; focusPl
     );
   }
 
+  const paidPrincipalCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
+  const paidInterestCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
+  const paidPrincipalUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
+  const paidInterestUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
+
   return (
     <section className="stack">
       <div className="metric-grid">
         <Metric title="Préstamos" value={String(plans.length)} />
-        <Metric title="Debe C$" value={money(plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0))} tone="warn" />
-        <Metric title="Debe USD" value={money(plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0), "USD")} tone="warn" />
+        <Metric
+          title={<span className="metric-title-with-info">Debe C$ <InfoTooltip text={paidBreakdownText(paidPrincipalCordobas, paidInterestCordobas, "C$")} /></span>}
+          value={money(plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0))}
+          tone="warn"
+        />
+        <Metric
+          title={<span className="metric-title-with-info">Debe USD <InfoTooltip text={paidBreakdownText(paidPrincipalUsd, paidInterestUsd, "USD")} /></span>}
+          value={money(plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0), "USD")}
+          tone="warn"
+        />
         <Metric title="Cuotas atrasadas" value={String(plans.flatMap((plan) => plan.installments).filter((installment) => installment.status === 4).length)} tone="danger" />
       </div>
       {plans.map((plan) => (
@@ -2343,7 +2418,9 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
             <InfoTooltip text={lateFeePolicyText(detail.loan)} />
           </span>
         )}
-        <span>Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}</span>
+        <DebtWithInfo principal={detail.loan.paidPrincipal} interest={detail.loan.paidInterest} currency={currencyLabels[detail.loan.currency]}>
+          Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}
+        </DebtWithInfo>
       </div>
       <div className="table-wrap">
         <table>
@@ -2365,6 +2442,7 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
             {detail.installments.map((installment: Installment) => {
               const mora = lateFeeAllocation(detail, installment);
               const pending = installmentPendingAmount(installment) + mora.pendingAmount;
+              const paidBreakdown = installmentPaidBreakdown(installment);
 
               return (
                 <tr key={installment.id}>
@@ -2376,7 +2454,11 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
                   <td>{mora.amount > 0 ? money(mora.amount, currencyLabels[detail.loan.currency]) : "-"}</td>
                   <td>{money(installment.amountPaid + mora.amountPaid, currencyLabels[detail.loan.currency])}</td>
                   <td>{money(pending, currencyLabels[detail.loan.currency])}</td>
-                  <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
+                  <td>
+                    <DebtWithInfo principal={paidBreakdown.paidPrincipal} interest={paidBreakdown.paidInterest} currency={currencyLabels[detail.loan.currency]}>
+                      {money(installment.remainingBalance, currencyLabels[detail.loan.currency])}
+                    </DebtWithInfo>
+                  </td>
                   <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
                 </tr>
               );
@@ -2544,6 +2626,7 @@ function LoanRecalculationDialog({
               <option value={2}>Transferencia</option>
               <option value={3}>Depósito</option>
               <option value={4}>Otro</option>
+              <option value={5}>Kash</option>
             </select>
           </label>
           <label className="field-label span-2">
@@ -2649,7 +2732,7 @@ function Panel({ title, children }: { title: React.ReactNode; children: React.Re
   );
 }
 
-function Metric({ title, value, tone }: { title: string; value: string; tone?: "good" | "warn" | "danger" }) {
+function Metric({ title, value, tone }: { title: React.ReactNode; value: string; tone?: "good" | "warn" | "danger" }) {
   return (
     <div className={`metric ${tone ?? ""}`}>
       <span>{title}</span>

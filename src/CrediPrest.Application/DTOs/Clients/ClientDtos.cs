@@ -22,7 +22,11 @@ public sealed record ClientDto(
     DateTime RegisteredAtUtc,
     int ActiveLoans,
     decimal PendingCordobas,
-    decimal PendingUsd);
+    decimal PendingUsd,
+    decimal PaidPrincipalCordobas,
+    decimal PaidInterestCordobas,
+    decimal PaidPrincipalUsd,
+    decimal PaidInterestUsd);
 
 public sealed record CreateClientRequest(
     string FullName,

@@ -17,6 +17,8 @@ internal static class MappingExtensions
         var pendingUsd = client.Loans
             .Where(loan => loan.Currency == CurrencyType.Usd)
             .Sum(loan => loan.TotalToPay - GetAppliedInstallmentAmount(loan) + GetPendingChargesAmount(loan));
+        var cordobasBreakdown = SumPaidBreakdown(client.Loans.Where(loan => loan.Currency == CurrencyType.Cordoba));
+        var usdBreakdown = SumPaidBreakdown(client.Loans.Where(loan => loan.Currency == CurrencyType.Usd));
 
         return new ClientDto(
             client.Id,
@@ -40,7 +42,11 @@ internal static class MappingExtensions
             client.RegisteredAtUtc,
             activeLoans,
             Math.Max(0, pendingCordobas),
-            Math.Max(0, pendingUsd));
+            Math.Max(0, pendingUsd),
+            cordobasBreakdown.Principal,
+            cordobasBreakdown.Interest,
+            usdBreakdown.Principal,
+            usdBreakdown.Interest);
     }
 
     public static InstallmentDto ToDto(this Installment installment)
@@ -116,6 +122,7 @@ internal static class MappingExtensions
         var extraordinaryPrincipalPaid = loan.Payments
             .Where(payment => payment.Type == PaymentType.ExtraordinaryPrincipal)
             .Sum(payment => payment.AmountPaid);
+        var paidBreakdown = GetPaidBreakdown(loan);
         var totalPaid = installmentPaid + lateFeesPaid + extraordinaryPrincipalPaid;
 
         return new LoanDto(
@@ -137,6 +144,8 @@ internal static class MappingExtensions
             loan.TotalInterest,
             loan.TotalToPay,
             totalPaid,
+            paidBreakdown.Principal,
+            paidBreakdown.Interest,
             lateFeesTotal,
             lateFeesPaid,
             lateFeesPending,
@@ -148,6 +157,35 @@ internal static class MappingExtensions
 
     private static decimal GetAppliedInstallmentAmount(Loan loan)
         => Math.Min(loan.TotalToPay, loan.Installments.Sum(installment => installment.AmountPaid));
+
+    private static PaidBreakdown GetPaidBreakdown(Loan loan)
+    {
+        var paidInterest = loan.Installments.Sum(installment =>
+            Math.Min(Math.Max(0, installment.AmountPaid), installment.InterestAmount));
+        var paidPrincipalFromInstallments = loan.Installments.Sum(installment =>
+        {
+            var appliedAmount = Math.Max(0, installment.AmountPaid);
+            var interestApplied = Math.Min(appliedAmount, installment.InterestAmount);
+            return Math.Min(installment.PrincipalAmount, Math.Max(0, appliedAmount - interestApplied));
+        });
+        var extraordinaryPrincipalPaid = loan.Payments
+            .Where(payment => payment.Type == PaymentType.ExtraordinaryPrincipal)
+            .Sum(payment => payment.AmountPaid);
+
+        return new PaidBreakdown(
+            Math.Round(Math.Min(loan.PrincipalAmount, paidPrincipalFromInstallments + extraordinaryPrincipalPaid), 2),
+            Math.Round(Math.Min(loan.TotalInterest, paidInterest), 2));
+    }
+
+    private static PaidBreakdown SumPaidBreakdown(IEnumerable<Loan> loans)
+    {
+        var breakdowns = loans.Select(GetPaidBreakdown).ToList();
+        return new PaidBreakdown(
+            Math.Round(breakdowns.Sum(item => item.Principal), 2),
+            Math.Round(breakdowns.Sum(item => item.Interest), 2));
+    }
+
+    private sealed record PaidBreakdown(decimal Principal, decimal Interest);
 
     private static InstallmentStatus GetEffectiveInstallmentStatus(Installment installment)
     {

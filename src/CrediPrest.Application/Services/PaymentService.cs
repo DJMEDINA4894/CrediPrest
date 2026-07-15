@@ -17,6 +17,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("El monto pagado debe ser mayor que cero.");
         }
 
+        if (!Enum.IsDefined(request.PaymentMethod))
+        {
+            throw new InvalidOperationException("Selecciona un método de pago válido.");
+        }
+
         if (request.PaymentDate.Date > BusinessClock.Today)
         {
             throw new InvalidOperationException("La fecha del pago no puede estar en el futuro.");

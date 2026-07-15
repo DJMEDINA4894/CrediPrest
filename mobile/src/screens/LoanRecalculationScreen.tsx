@@ -21,7 +21,8 @@ const paymentMethods = [
   { value: "1", label: "Efectivo" },
   { value: "2", label: "Transferencia" },
   { value: "3", label: "Depósito" },
-  { value: "4", label: "Otro" }
+  { value: "4", label: "Otro" },
+  { value: "5", label: "Kash" }
 ];
 
 export function LoanRecalculationScreen({ route, navigation }: Props) {

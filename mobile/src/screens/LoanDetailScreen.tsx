@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { Card, EmptyState, ErrorText, GhostButton, InfoTooltip, Screen, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -73,7 +74,10 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               {detail.loan.referenceName ? <Text style={styles.muted}>Referencia: {detail.loan.referenceName}</Text> : null}
               <Text style={styles.total}>Total: {money(detail.loan.totalToPay, currency)}</Text>
               <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
-              <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
+              <View style={styles.dueRow}>
+                <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
+                <PaidBreakdownInfo principal={detail.loan.paidPrincipal} interest={detail.loan.paidInterest} currency={currency} />
+              </View>
               {detail.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {detail.loan.lateFeeDescription}</Text>
@@ -171,6 +175,11 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: "900",
     marginTop: 4
+  },
+  dueRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4
   },
   lateFeeSummary: {
     alignItems: "center",
