@@ -36,6 +36,7 @@ export function UsersScreen({ navigation }: Props) {
       setError("");
       await api.updateUser(user.id, {
         clientId: null,
+        userName: user.userName,
         email: user.email,
         fullName: user.fullName,
         phone: user.phone ?? null,

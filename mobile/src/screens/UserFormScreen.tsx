@@ -63,6 +63,7 @@ export function UserFormScreen({ route, navigation }: Props) {
       if (user) {
         await api.updateUser(user.id, {
           clientId: null,
+          userName: userName.trim(),
           email: email.trim(),
           fullName: fullName.trim(),
           phone: normalizedPhone,
@@ -102,12 +103,12 @@ export function UserFormScreen({ route, navigation }: Props) {
         <ErrorText text={error} />
         <Card title={user ? "Editar prestamista" : "Crear prestamista"}>
           <Field label="Nombre completo" value={fullName} onChangeText={setFullName} placeholder="Nombre y apellidos" />
-          <Field label="Usuario o NickName" value={userName} onChangeText={setUserName} editable={!user} autoCapitalize="none" placeholder="Ej. jmedina" />
+          <Field label="Usuario o NickName" value={userName} onChangeText={setUserName} autoCapitalize="none" placeholder="Ej. jmedina" />
           <Field label="Correo" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="correo@dominio.com" />
           <Field label="Teléfono" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="88888888" />
           <Field label="Cédula" value={identificationNumber} onChangeText={setIdentificationNumber} autoCapitalize="characters" placeholder="001-010101-0001A" />
           <Field
-            label="Contraseña"
+            label={user ? "Nueva contraseña" : "Contraseña"}
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
@@ -117,7 +118,7 @@ export function UserFormScreen({ route, navigation }: Props) {
             placeholder={user ? "Déjala vacía para conservarla" : "Más de 8 caracteres"}
           />
           <Field
-            label="Confirmar contraseña"
+            label={user ? "Confirmar nueva contraseña" : "Confirmar contraseña"}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry={!showConfirmation}
@@ -126,7 +127,11 @@ export function UserFormScreen({ route, navigation }: Props) {
             onRightAction={() => setShowConfirmation((value) => !value)}
             placeholder={user ? "Repite solo si la cambias" : "Repite la contraseña"}
           />
-          <Text style={styles.hint}>El prestamista solo verá sus propios clientes, préstamos, pagos, reportes y dashboard.</Text>
+          <Text style={styles.hint}>
+            {user
+              ? "Por seguridad no se muestra la contraseña actual. Deja ambos campos vacíos para conservarla o completa los dos para cambiarla."
+              : "El prestamista solo verá sus propios clientes, préstamos, pagos, reportes y dashboard."}
+          </Text>
           <PrimaryButton title={user ? "Guardar cambios" : "Crear prestamista"} onPress={submit} loading={saving} />
         </Card>
       </ScrollView>

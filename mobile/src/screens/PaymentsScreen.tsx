@@ -5,7 +5,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
 import { DateField } from "../components/DateField";
-import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
@@ -206,10 +205,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
             <>
               <Text style={styles.loanName}>{selectedLoan.clientName}</Text>
               {selectedLoan.referenceName ? <Text style={styles.muted}>{selectedLoan.referenceName}</Text> : null}
-              <View style={styles.dueRow}>
-                <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
-                <PaidBreakdownInfo principal={selectedLoan.paidPrincipal} interest={selectedLoan.paidInterest} currency={currency} />
-              </View>
+              <Text style={styles.due}>Debe: {money(selectedLoan.pendingBalance, currency)}</Text>
               {selectedLoan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {selectedLoan.lateFeeDescription}</Text>
@@ -357,11 +353,6 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900",
-  },
-  dueRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
     marginTop: spacing.sm
   },
   late: {

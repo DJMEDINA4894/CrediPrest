@@ -76,8 +76,14 @@ internal sealed class UserService(IApplicationDbContext dbContext, IPasswordHash
 
     public async Task<UserDto> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken cancellationToken = default)
     {
+        var user = await dbContext.Users.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
+            ?? throw new KeyNotFoundException("Usuario no encontrado.");
+        var requestedUserName = string.IsNullOrWhiteSpace(request.UserName)
+            ? user.UserName
+            : request.UserName.Trim();
+
         ValidateUser(
-            "existing",
+            requestedUserName,
             request.Email,
             request.FullName,
             request.Phone,
@@ -88,22 +94,23 @@ internal sealed class UserService(IApplicationDbContext dbContext, IPasswordHash
             request.ClientId,
             isCreate: false);
 
-        var user = await dbContext.Users.FirstOrDefaultAsync(item => item.Id == id, cancellationToken)
-            ?? throw new KeyNotFoundException("Usuario no encontrado.");
+        var normalizedUserName = requestedUserName.ToLowerInvariant();
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        var emailExists = await dbContext.Users.AnyAsync(
-            item => item.Id != id && item.Email.ToLower() == normalizedEmail,
+        var userOrEmailExists = await dbContext.Users.AnyAsync(
+            item => item.Id != id
+                && (item.UserName.ToLower() == normalizedUserName || item.Email.ToLower() == normalizedEmail),
             cancellationToken);
 
-        if (emailExists)
+        if (userOrEmailExists)
         {
-            throw new InvalidOperationException("Ya existe un usuario con ese correo.");
+            throw new InvalidOperationException("Ya existe otro usuario con ese nickname o correo.");
         }
 
         await EnsureUniqueContactAsync(id, request.Phone, request.IdentificationNumber, cancellationToken);
         await ValidateClientLinkAsync(request.Role, request.ClientId, cancellationToken);
 
         user.ClientId = request.Role == UserRole.Client ? request.ClientId : null;
+        user.UserName = requestedUserName;
         user.Email = request.Email.Trim();
         user.FullName = request.FullName.Trim();
         user.Phone = request.Phone?.Trim();

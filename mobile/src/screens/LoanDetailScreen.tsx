@@ -13,6 +13,33 @@ import { shareLoanAgreement, shareLoanPaymentPlan } from "../utils/loanDocuments
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanDetail">;
 
+function paidBreakdown(detail: LoanDetail) {
+  const installmentBreakdown = detail.installments.reduce(
+    (total, installment) => {
+      const paidInterest = Math.min(Math.max(0, installment.amountPaid), installment.interestAmount);
+      const paidPrincipal = Math.min(
+        installment.principalAmount,
+        Math.max(0, installment.amountPaid - paidInterest)
+      );
+
+      return {
+        principal: total.principal + paidPrincipal,
+        interest: total.interest + paidInterest,
+        outstandingPrincipal: total.outstandingPrincipal + Math.max(0, installment.principalAmount - paidPrincipal)
+      };
+    },
+    { principal: 0, interest: 0, outstandingPrincipal: 0 }
+  );
+  const inferredPaidPrincipal = detail.installments.length > 0
+    ? Math.max(0, detail.loan.principalAmount - installmentBreakdown.outstandingPrincipal)
+    : installmentBreakdown.principal;
+
+  return {
+    principal: Math.max(detail.loan.paidPrincipal ?? 0, installmentBreakdown.principal, inferredPaidPrincipal),
+    interest: Math.max(detail.loan.paidInterest ?? 0, installmentBreakdown.interest)
+  };
+}
+
 export function LoanDetailScreen({ route, navigation }: Props) {
   const [detail, setDetail] = useState<LoanDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,6 +63,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
   }, [load]));
 
   const currency = detail ? currencyLabels[detail.loan.currency] : "C$";
+  const paid = detail ? paidBreakdown(detail) : { principal: 0, interest: 0 };
   const lateFeeExplanation = detail?.loan.lateFeeDescription
     ? lateFeePolicyText(
       detail.loan.paymentFrequency,
@@ -76,7 +104,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
               <View style={styles.dueRow}>
                 <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
-                <PaidBreakdownInfo principal={detail.loan.paidPrincipal} interest={detail.loan.paidInterest} currency={currency} />
+                <PaidBreakdownInfo principal={paid.principal} interest={paid.interest} currency={currency} />
               </View>
               {detail.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>

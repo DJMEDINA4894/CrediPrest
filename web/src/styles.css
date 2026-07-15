@@ -891,13 +891,6 @@ td small {
   margin-bottom: 0.45rem;
 }
 
-.metric > .metric-title-with-info {
-  align-items: center;
-  display: flex;
-  gap: 0.25rem;
-}
-
-.metric-title-with-info .info-tooltip-wrap,
 .debt-with-info .info-tooltip-wrap {
   margin-left: 0.15rem;
 }

@@ -4,7 +4,6 @@ import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-nativ
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
 import { Card, DangerButton, EmptyState, ErrorText, GhostButton, PrimaryButton, Screen, Text } from "../components/ui";
-import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { Loan } from "../types/models";
@@ -88,10 +87,7 @@ export function LoansScreen({ navigation }: Props) {
             </View>
             <View style={styles.amounts}>
               <Text style={styles.amount}>Monto: {money(loan.principalAmount, currencyLabels[loan.currency])}</Text>
-              <View style={styles.dueRow}>
-                <Text style={styles.due}>Debe: {money(loan.pendingBalance, currencyLabels[loan.currency])}</Text>
-                <PaidBreakdownInfo principal={loan.paidPrincipal} interest={loan.paidInterest} currency={currencyLabels[loan.currency]} />
-              </View>
+              <Text style={styles.due}>Debe: {money(loan.pendingBalance, currencyLabels[loan.currency])}</Text>
               {loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora: {money(loan.lateFeesPending, currencyLabels[loan.currency])}</Text> : null}
             </View>
             <View style={styles.actions}>
@@ -157,11 +153,6 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900"
-  },
-  dueRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4
   },
   late: {
     color: colors.danger,

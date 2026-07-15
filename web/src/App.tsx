@@ -167,16 +167,6 @@ function paidBreakdownText(principal: number, interest: number, currency: string
   );
 }
 
-function clientPaidBreakdownText(client: Client) {
-  return (
-    <>
-      Córdobas: capital <strong>{money(client.paidPrincipalCordobas ?? 0)}</strong> e interés <strong>{money(client.paidInterestCordobas ?? 0)}</strong>.
-      <br />
-      Dólares: capital <strong>{money(client.paidPrincipalUsd ?? 0, "USD")}</strong> e interés <strong>{money(client.paidInterestUsd ?? 0, "USD")}</strong>.
-    </>
-  );
-}
-
 function installmentPaidBreakdown(installment: Installment) {
   const paidInterest = Math.min(Math.max(0, installment.amountPaid), installment.interestAmount);
   const paidPrincipal = Math.min(
@@ -185,6 +175,28 @@ function installmentPaidBreakdown(installment: Installment) {
   );
 
   return { paidPrincipal, paidInterest };
+}
+
+function loanDetailPaidBreakdown(detail: LoanDetail) {
+  const installmentBreakdown = detail.installments.reduce(
+    (total, installment) => {
+      const paid = installmentPaidBreakdown(installment);
+      return {
+        principal: total.principal + paid.paidPrincipal,
+        interest: total.interest + paid.paidInterest,
+        outstandingPrincipal: total.outstandingPrincipal + Math.max(0, installment.principalAmount - paid.paidPrincipal)
+      };
+    },
+    { principal: 0, interest: 0, outstandingPrincipal: 0 }
+  );
+  const inferredPaidPrincipal = detail.installments.length > 0
+    ? Math.max(0, detail.loan.principalAmount - installmentBreakdown.outstandingPrincipal)
+    : installmentBreakdown.principal;
+
+  return {
+    principal: Math.max(detail.loan.paidPrincipal ?? 0, installmentBreakdown.principal, inferredPaidPrincipal),
+    interest: Math.max(detail.loan.paidInterest ?? 0, installmentBreakdown.interest)
+  };
 }
 
 function DebtWithInfo({
@@ -1026,6 +1038,7 @@ export default function App() {
       if (editingUser) {
         await api.updateUser(editingUser.id, {
           clientId: payload.clientId,
+          userName: payload.userName,
           email: payload.email,
           fullName: payload.fullName,
           phone: payload.phone,
@@ -1054,6 +1067,7 @@ export default function App() {
       setError(null);
       await api.updateUser(user.id, {
         clientId: null,
+        userName: user.userName,
         email: user.email,
         fullName: user.fullName,
         phone: user.phone ?? null,
@@ -1735,12 +1749,7 @@ function ClientsView(props: {
                   </td>
                   <td><span className={`badge client-${client.isActive ? "active" : "inactive"}`}>{client.isActive ? "Activo" : "Inactivo"}</span></td>
                   <td>{client.activeLoans}</td>
-                  <td>
-                    <span className="debt-with-info">
-                      {clientDebt(client)}
-                      <InfoTooltip ariaLabel="Ver capital e interés pagados" text={clientPaidBreakdownText(client)} />
-                    </span>
-                  </td>
+                  <td>{clientDebt(client)}</td>
                   <td className="row-actions">
                     <button type="button" className="ghost" onClick={() => props.setEditingClient(client)}>Editar</button>
                     {client.isActive ? (
@@ -1915,11 +1924,7 @@ function LoansView(props: {
                     <td>{loan.monthlyInterestRate}% mensual</td>
                     <td>{loan.termMonths}</td>
                     <td><span className={`badge status-${loan.status}`}>{statusLabels[loan.status]}</span></td>
-                    <td>
-                      <DebtWithInfo principal={loan.paidPrincipal} interest={loan.paidInterest} currency={currencyLabels[loan.currency]}>
-                        {money(loan.pendingBalance, currencyLabels[loan.currency])}
-                      </DebtWithInfo>
-                    </td>
+                    <td>{money(loan.pendingBalance, currencyLabels[loan.currency])}</td>
                     <td className="row-actions">
                       <button type="button" className="ghost" onClick={() => props.openLoan(loan.id)}>Detalle</button>
                       <button type="button" className="ghost" onClick={() => props.startNewLoan(loan.clientId)}>Nuevo</button>
@@ -2093,25 +2098,12 @@ function ClientPortalView({ plans, focusPlanId }: { plans: LoanDetail[]; focusPl
     );
   }
 
-  const paidPrincipalCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
-  const paidInterestCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
-  const paidPrincipalUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
-  const paidInterestUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
-
   return (
     <section className="stack">
       <div className="metric-grid">
         <Metric title="Préstamos" value={String(plans.length)} />
-        <Metric
-          title={<span className="metric-title-with-info">Debe C$ <InfoTooltip text={paidBreakdownText(paidPrincipalCordobas, paidInterestCordobas, "C$")} /></span>}
-          value={money(plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0))}
-          tone="warn"
-        />
-        <Metric
-          title={<span className="metric-title-with-info">Debe USD <InfoTooltip text={paidBreakdownText(paidPrincipalUsd, paidInterestUsd, "USD")} /></span>}
-          value={money(plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0), "USD")}
-          tone="warn"
-        />
+        <Metric title="Debe C$" value={money(plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0))} tone="warn" />
+        <Metric title="Debe USD" value={money(plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0), "USD")} tone="warn" />
         <Metric title="Cuotas atrasadas" value={String(plans.flatMap((plan) => plan.installments).filter((installment) => installment.status === 4).length)} tone="danger" />
       </div>
       {plans.map((plan) => (
@@ -2201,7 +2193,7 @@ function UserManagementView({
 
   return (
     <section className="stack">
-      <Panel title="Crear prestamista">
+      <Panel title={editingUser ? "Editar prestamista" : "Crear prestamista"}>
         <form className="grid-form" onSubmit={submitUser} key={editingUser?.id ?? "new-user"} autoComplete="off">
           <label className="field-label">
             Nombre completo
@@ -2209,7 +2201,7 @@ function UserManagementView({
           </label>
           <label className="field-label">
             Usuario o NickName
-            <input name="lenderAlias" placeholder="Ej. jmedina" defaultValue={editingUser?.userName ?? ""} autoComplete="off" spellCheck={false} required disabled={Boolean(editingUser)} />
+            <input name="lenderAlias" placeholder="Ej. jmedina" defaultValue={editingUser?.userName ?? ""} autoComplete="off" spellCheck={false} required />
           </label>
           <label className="field-label">
             Correo
@@ -2224,7 +2216,7 @@ function UserManagementView({
             <input name="identificationNumber" placeholder="001-010101-0001A" pattern={identificationPattern} defaultValue={editingUser?.identificationNumber ?? ""} autoComplete="off" required />
           </label>
           <label className="field-label">
-            Contraseña
+            {editingUser ? "Nueva contraseña" : "Contraseña"}
             <div className="password-field">
               <input
                 name="lenderAccessCode"
@@ -2246,7 +2238,7 @@ function UserManagementView({
             </div>
           </label>
           <label className="field-label">
-            Confirmar contraseña
+            {editingUser ? "Confirmar nueva contraseña" : "Confirmar contraseña"}
             <div className="password-field">
               <input
                 name="lenderAccessConfirm"
@@ -2268,7 +2260,9 @@ function UserManagementView({
             </div>
           </label>
           <p className="form-hint span-2">
-            Estos usuarios podrán entrar como prestamistas y solo verán sus clientes, préstamos, pagos, reportes y dashboard.
+            {editingUser
+              ? "Por seguridad no se muestra la contraseña actual. Deja ambos campos vacíos para conservarla o completa los dos para cambiarla."
+              : "Estos usuarios podrán entrar como prestamistas y solo verán sus clientes, préstamos, pagos, reportes y dashboard."}
           </p>
           <div className="form-actions span-2">
             {editingUser && (
@@ -2371,6 +2365,7 @@ function SettingsView({ fontSize, setFontSize }: { fontSize: number; setFontSize
 
 function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onRecalculate?: () => void }) {
   const [agreementError, setAgreementError] = useState("");
+  const paidBreakdown = loanDetailPaidBreakdown(detail);
 
   return (
     <Panel title={`Tabla de pagos - ${loanDisplayName(detail.loan)}`}>
@@ -2418,7 +2413,7 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
             <InfoTooltip text={lateFeePolicyText(detail.loan)} />
           </span>
         )}
-        <DebtWithInfo principal={detail.loan.paidPrincipal} interest={detail.loan.paidInterest} currency={currencyLabels[detail.loan.currency]}>
+        <DebtWithInfo principal={paidBreakdown.principal} interest={paidBreakdown.interest} currency={currencyLabels[detail.loan.currency]}>
           Debe {money(detail.loan.pendingBalance, currencyLabels[detail.loan.currency])}
         </DebtWithInfo>
       </div>
@@ -2442,8 +2437,6 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
             {detail.installments.map((installment: Installment) => {
               const mora = lateFeeAllocation(detail, installment);
               const pending = installmentPendingAmount(installment) + mora.pendingAmount;
-              const paidBreakdown = installmentPaidBreakdown(installment);
-
               return (
                 <tr key={installment.id}>
                   <td>{installment.installmentNumber}</td>
@@ -2454,11 +2447,7 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
                   <td>{mora.amount > 0 ? money(mora.amount, currencyLabels[detail.loan.currency]) : "-"}</td>
                   <td>{money(installment.amountPaid + mora.amountPaid, currencyLabels[detail.loan.currency])}</td>
                   <td>{money(pending, currencyLabels[detail.loan.currency])}</td>
-                  <td>
-                    <DebtWithInfo principal={paidBreakdown.paidPrincipal} interest={paidBreakdown.paidInterest} currency={currencyLabels[detail.loan.currency]}>
-                      {money(installment.remainingBalance, currencyLabels[detail.loan.currency])}
-                    </DebtWithInfo>
-                  </td>
+                  <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
                   <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
                 </tr>
               );
@@ -2732,7 +2721,7 @@ function Panel({ title, children }: { title: React.ReactNode; children: React.Re
   );
 }
 
-function Metric({ title, value, tone }: { title: React.ReactNode; value: string; tone?: "good" | "warn" | "danger" }) {
+function Metric({ title, value, tone }: { title: string; value: string; tone?: "good" | "warn" | "danger" }) {
   return (
     <div className={`metric ${tone ?? ""}`}>
       <span>{title}</span>

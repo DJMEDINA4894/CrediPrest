@@ -3,7 +3,6 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-n
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../api/client";
-import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { Card, EmptyState, ErrorText, InfoTooltip, Metric, Screen, SecondaryButton, Text } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
@@ -46,10 +45,6 @@ export function ClientPortalScreen() {
 
   const pendingCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
   const pendingUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + plan.loan.pendingBalance, 0);
-  const paidPrincipalCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
-  const paidInterestCordobas = plans.filter((plan) => plan.loan.currency === 1).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
-  const paidPrincipalUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidPrincipal ?? 0), 0);
-  const paidInterestUsd = plans.filter((plan) => plan.loan.currency === 2).reduce((sum, plan) => sum + (plan.loan.paidInterest ?? 0), 0);
 
   async function downloadPlan(plan: LoanDetail) {
     try {
@@ -88,28 +83,15 @@ export function ClientPortalScreen() {
         </View>
         <ErrorText text={error} />
         <View style={styles.metrics}>
-          <Metric
-            title="Debe C$"
-            value={money(pendingCordobas)}
-            tone="warn"
-            titleAccessory={<PaidBreakdownInfo principal={paidPrincipalCordobas} interest={paidInterestCordobas} currency="C$" />}
-          />
-          <Metric
-            title="Debe USD"
-            value={money(pendingUsd, "USD")}
-            tone="warn"
-            titleAccessory={<PaidBreakdownInfo principal={paidPrincipalUsd} interest={paidInterestUsd} currency="USD" />}
-          />
+          <Metric title="Debe C$" value={money(pendingCordobas)} tone="warn" />
+          <Metric title="Debe USD" value={money(pendingUsd, "USD")} tone="warn" />
         </View>
         {plans.length === 0 ? <EmptyState text="No tienes prestamos activos registrados para mostrar." /> : null}
         {plans.map((plan) => {
           const currency = currencyLabels[plan.loan.currency];
           return (
             <Card key={plan.loan.id} title={plan.loan.referenceName ?? "Prestamo"}>
-              <View style={styles.dueRow}>
-                <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
-                <PaidBreakdownInfo principal={plan.loan.paidPrincipal} interest={plan.loan.paidInterest} currency={currency} />
-              </View>
+              <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
               {plan.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}</Text>
@@ -246,11 +228,6 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900"
-  },
-  dueRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4
   },
   late: {
     color: colors.danger,

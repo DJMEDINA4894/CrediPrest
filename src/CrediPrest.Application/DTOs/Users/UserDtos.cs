@@ -27,6 +27,7 @@ public sealed record CreateUserRequest(
 
 public sealed record UpdateUserRequest(
     Guid? ClientId,
+    string? UserName,
     string Email,
     string FullName,
     string? Phone,
