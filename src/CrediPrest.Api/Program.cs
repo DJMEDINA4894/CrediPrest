@@ -1,10 +1,13 @@
 using System.Text;
+using System.Security.Claims;
 using CrediPrest.Api;
 using CrediPrest.Application.Services;
+using CrediPrest.Domain.Enums;
 using CrediPrest.Infrastructure;
 using CrediPrest.Infrastructure.Persistence;
 using CrediPrest.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -48,6 +51,29 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwtOptions.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey)),
             ClockSkew = TimeSpan.FromMinutes(2)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var identifier = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? context.Principal?.FindFirstValue("sub");
+                if (!Guid.TryParse(identifier, out var subjectId))
+                {
+                    context.Fail("Usuario no identificado.");
+                    return;
+                }
+
+                var database = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var isActive = context.Principal?.IsInRole(UserRole.Client.ToString()) == true
+                    ? await database.Clients.AnyAsync(client => client.Id == subjectId && client.IsActive, context.HttpContext.RequestAborted)
+                    : await database.Users.AnyAsync(user => user.Id == subjectId && user.IsActive, context.HttpContext.RequestAborted);
+
+                if (!isActive)
+                {
+                    context.Fail("El usuario está inactivo o fue eliminado.");
+                }
+            }
         };
     });
 

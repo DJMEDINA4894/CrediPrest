@@ -1056,6 +1056,13 @@ export default function App() {
       if (nextView) {
         setView(nextView);
       }
+      if (nextView === "loans" || (nextView === null && view === "loans")) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            document.getElementById(`loan-detail-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo abrir el préstamo");
     } finally {
@@ -1866,10 +1873,12 @@ function LoansView(props: {
           </div>
         </Panel>
       {props.loanDetail && (
-        <LoanDetailPanel
-          detail={props.loanDetail}
-          onRecalculate={() => setRecalculationDetail(props.loanDetail)}
-        />
+        <div id={`loan-detail-${props.loanDetail.loan.id}`} className="loan-detail-anchor">
+          <LoanDetailPanel
+            detail={props.loanDetail}
+            onRecalculate={() => setRecalculationDetail(props.loanDetail)}
+          />
+        </div>
       )}
       {recalculationDetail && (
         <LoanRecalculationDialog

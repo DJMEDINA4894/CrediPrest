@@ -767,6 +767,10 @@ td small {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.loan-detail-anchor {
+  scroll-margin-top: 24px;
+}
+
 .payment-form-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

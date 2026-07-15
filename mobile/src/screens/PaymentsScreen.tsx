@@ -8,7 +8,7 @@ import { DateField } from "../components/DateField";
 import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
-import type { Loan, Payment } from "../types/models";
+import type { Installment, Loan, LoanDetail, Payment } from "../types/models";
 import { currencyLabels, dateInputValue, dateOnly, lateFeePolicyText, money } from "../utils/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Payments">;
@@ -16,6 +16,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "Payments">;
 export function PaymentsScreen({ route, navigation }: Props) {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(route.params?.loan ?? null);
+  const [loanDetail, setLoanDetail] = useState<LoanDetail | null>(null);
+  const [selectedInstallmentId, setSelectedInstallmentId] = useState("");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
   const [paymentDate, setPaymentDate] = useState(dateInputValue());
@@ -33,6 +35,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
 
     try {
       const [detail, loanPayments] = await Promise.all([api.loanDetail(loan.id), api.payments(loan.id)]);
+      setLoanDetail(detail);
       setPayments([...loanPayments].sort((left, right) => right.paymentDate.localeCompare(left.paymentDate)));
       const orderedInstallments = [...detail.installments]
         .filter((installment) => installment.status !== 3)
@@ -42,7 +45,10 @@ export function PaymentsScreen({ route, navigation }: Props) {
         ?? orderedInstallments[0];
 
       if (suggestedInstallment) {
+        setSelectedInstallmentId(suggestedInstallment.id);
         setPaymentDate(dateInputValue(suggestedInstallment.dueDate));
+      } else {
+        setSelectedInstallmentId("");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo preparar la fecha de pago.");
@@ -76,6 +82,11 @@ export function PaymentsScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (!selectedInstallmentId) {
+      setError("Selecciona la cuota hasta la cual se aplicará el pago.");
+      return;
+    }
+
     const amount = Number(amountPaid);
     if (!Number.isFinite(amount) || amount <= 0) {
       setError("Ingresa un monto valido.");
@@ -87,7 +98,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
       setSaving(true);
       const detail = await api.registerPayment({
         loanId: selectedLoan.id,
-        installmentId: null,
+        installmentId: selectedInstallmentId,
         paymentDate,
         amountPaid: amount,
         paymentMethod,
@@ -167,6 +178,13 @@ export function PaymentsScreen({ route, navigation }: Props) {
     value: loan.id,
     label: `${loan.clientName}${loan.referenceName ? ` - ${loan.referenceName}` : ""} - ${money(loan.pendingBalance, currencyLabels[loan.currency])}`
   }));
+  const payableInstallments = [...(loanDetail?.installments ?? [])]
+    .filter((installment) => installment.status !== 3)
+    .sort((left, right) => left.installmentNumber - right.installmentNumber);
+  const installmentOptions = payableInstallments.map((installment) => ({
+    value: installment.id,
+    label: `Cuota ${installment.installmentNumber} · ${dateOnly(installment.dueDate)} · pendiente ${money(installmentPendingAmount(installment), currency)}`
+  }));
 
   return (
     <Screen>
@@ -205,6 +223,17 @@ export function PaymentsScreen({ route, navigation }: Props) {
         </Card>
 
         <Card title="Registrar pago">
+          <SelectField
+            label="Aplicar pago hasta la cuota"
+            value={selectedInstallmentId}
+            options={installmentOptions}
+            onChange={(installmentId) => {
+              setSelectedInstallmentId(installmentId);
+              const installment = payableInstallments.find((item) => item.id === installmentId);
+              if (installment) setPaymentDate(dateInputValue(installment.dueDate));
+            }}
+            placeholder="Selecciona una cuota"
+          />
           <DateField label="Fecha de pago" value={paymentDate} onChange={setPaymentDate} maximumDate={dateInputValue()} />
           <Field label="Monto pagado" value={amountPaid} onChangeText={setAmountPaid} keyboardType="decimal-pad" placeholder="Ej. 500" />
           <Text style={styles.label}>Metodo de pago</Text>
@@ -245,8 +274,8 @@ export function PaymentsScreen({ route, navigation }: Props) {
             </View>
           ) : null}
           <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
-          <PrimaryButton title="Registrar pago" onPress={submit} loading={saving} disabled={!selectedLoan || !amountPaid} />
-          <Text style={styles.hint}>El pago se aplica primero a cuotas vencidas, luego a mora pendiente y despues a cuotas actuales.</Text>
+          <PrimaryButton title="Registrar pago" onPress={submit} loading={saving} disabled={!selectedLoan || !selectedInstallmentId || !amountPaid} />
+          <Text style={styles.hint}>El pago se aplica desde la cuota pendiente más antigua hasta la cuota seleccionada, incluyendo la mora pendiente.</Text>
         </Card>
 
         {selectedLoan ? (
@@ -301,6 +330,10 @@ export function PaymentsScreen({ route, navigation }: Props) {
       </Modal>
     </Screen>
   );
+}
+
+function installmentPendingAmount(installment: Installment) {
+  return Math.max(0, installment.paymentAmount - installment.amountPaid);
 }
 
 const styles = StyleSheet.create({

@@ -108,14 +108,53 @@ internal sealed class NotificationService(
                     || notification.Type == NotificationType.LateFeeWarning
                     || notification.Type == NotificationType.LateFeeApplied)
                 .ToListAsync(cancellationToken);
-            var paidInstallmentIds = await dbContext.Installments
-                .Where(installment => installment.AmountPaid >= installment.PaymentAmount)
-                .Select(installment => installment.Id)
-                .ToListAsync(cancellationToken);
+            var installmentNotificationIds = paymentNotifications
+                .Where(notification => notification.Type is NotificationType.OverdueInstallment
+                    or NotificationType.DueTodayInstallment
+                    or NotificationType.LateFeeWarning)
+                .Select(notification => notification.RelatedEntityId)
+                .Distinct()
+                .ToArray();
+            var notificationInstallments = await dbContext.Installments
+                .Include(installment => installment.Loan)
+                .ThenInclude(loan => loan.Client)
+                .Where(installment => installmentNotificationIds.Contains(installment.Id))
+                .ToDictionaryAsync(installment => installment.Id, cancellationToken);
+            var chargeNotificationIds = paymentNotifications
+                .Where(notification => notification.Type == NotificationType.LateFeeApplied)
+                .Select(notification => notification.RelatedEntityId)
+                .Distinct()
+                .ToArray();
+            var notificationCharges = await dbContext.LoanCharges
+                .Include(charge => charge.Loan)
+                .ThenInclude(loan => loan.Client)
+                .Where(charge => chargeNotificationIds.Contains(charge.Id))
+                .ToDictionaryAsync(charge => charge.Id, cancellationToken);
 
-            foreach (var notification in paymentNotifications.Where(notification => paidInstallmentIds.Contains(notification.RelatedEntityId)))
+            var obsoleteNotifications = paymentNotifications.Where(notification => notification.Type switch
             {
-                dbContext.Notifications.Remove(notification);
+                NotificationType.OverdueInstallment or NotificationType.DueTodayInstallment =>
+                    !notificationInstallments.TryGetValue(notification.RelatedEntityId, out var installment)
+                    || !installment.Loan.Client.IsActive
+                    || installment.Loan.Status == LoanStatus.Cancelled
+                    || installment.AmountPaid >= installment.PaymentAmount
+                    || installment.DueDate.Date > today,
+                NotificationType.LateFeeWarning =>
+                    !notificationInstallments.TryGetValue(notification.RelatedEntityId, out var warningInstallment)
+                    || !warningInstallment.Loan.Client.IsActive
+                    || warningInstallment.Loan.Status == LoanStatus.Cancelled,
+                NotificationType.LateFeeApplied =>
+                    !notificationCharges.TryGetValue(notification.RelatedEntityId, out var charge)
+                    || !charge.Loan.Client.IsActive
+                    || charge.Loan.Status == LoanStatus.Cancelled
+                    || charge.AmountPaid >= charge.Amount,
+                _ => false
+            }).ToList();
+
+            if (obsoleteNotifications.Count > 0)
+            {
+                dbContext.Notifications.RemoveRange(obsoleteNotifications);
+                paymentNotifications.RemoveAll(obsoleteNotifications.Contains);
             }
 
             var installments = await dbContext.Installments
@@ -131,9 +170,10 @@ internal sealed class NotificationService(
                 var isOverdue = installment.DueDate.Date < today;
                 var type = isOverdue ? NotificationType.OverdueInstallment : NotificationType.DueTodayInstallment;
                 var pendingAmount = Math.Max(0, installment.PaymentAmount - installment.AmountPaid);
+                var dueDate = FormatDate(installment.DueDate);
                 var title = isOverdue ? "Pago atrasado" : "Pago vence hoy";
-                var staffMessage = $"{installment.Loan.Client.FullName} tiene la cuota {installment.InstallmentNumber} {(isOverdue ? "atrasada" : "pendiente para hoy")} por {pendingAmount:N2}.";
-                var clientMessage = $"Tu cuota {installment.InstallmentNumber} {(isOverdue ? "está atrasada" : "vence hoy")} por {pendingAmount:N2}.";
+                var staffMessage = $"{installment.Loan.Client.FullName} tiene la cuota {installment.InstallmentNumber} {(isOverdue ? "atrasada" : "pendiente para hoy")}, con vencimiento {dueDate}, por {pendingAmount:N2}.";
+                var clientMessage = $"Tu cuota {installment.InstallmentNumber} {(isOverdue ? "está atrasada" : "vence hoy")}, con vencimiento {dueDate}, por {pendingAmount:N2}.";
 
                 foreach (var user in staffUsers.Where(user => user.Role == UserRole.Admin || installment.Loan.LenderUserId == user.Id))
                 {
@@ -374,4 +414,7 @@ internal sealed class NotificationService(
 
     private static string FormatMonth(DateTime date)
         => date.ToString("MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-NI"));
+
+    private static string FormatDate(DateTime date)
+        => date.ToString("d 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-NI"));
 }

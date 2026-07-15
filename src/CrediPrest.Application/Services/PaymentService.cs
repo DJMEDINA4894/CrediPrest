@@ -22,6 +22,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             throw new InvalidOperationException("La fecha del pago no puede estar en el futuro.");
         }
 
+        if (!request.InstallmentId.HasValue)
+        {
+            throw new InvalidOperationException("Selecciona la cuota hasta la cual se aplicará el pago.");
+        }
+
         await loanService.RefreshOverdueAsync(cancellationToken);
 
         Loan loan;

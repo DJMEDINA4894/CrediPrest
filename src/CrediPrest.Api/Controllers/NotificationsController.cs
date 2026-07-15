@@ -14,7 +14,10 @@ public sealed class NotificationsController(INotificationService notificationSer
     [HttpGet]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<ActionResult<IReadOnlyList<NotificationDto>>> List(CancellationToken cancellationToken)
-        => Ok(await notificationService.ListAsync(GetCurrentUserId(), GetCurrentClientId(), cancellationToken));
+    {
+        await notificationService.RefreshAutomaticAsync(cancellationToken);
+        return Ok(await notificationService.ListAsync(GetCurrentUserId(), GetCurrentClientId(), cancellationToken));
+    }
 
     [HttpPost("{id:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid id, CancellationToken cancellationToken)
