@@ -113,7 +113,7 @@ function lateFeePolicyText(loan: {
     : loan.paymentFrequency === 2
       ? `se reparte entre ${installmentsInPeriod} cuotas quincenales`
       : "se carga en la cuota mensual";
-  return `La mora es fija y no crece por días. Al cerrar el período mensual se aplica ${monthlyLateFeeRate}% al monto que siga pendiente de ese período. ${lateFeePercentage}% de la tasa de interés mensual de ${monthlyInterestRate}% equivale a ${monthlyLateFeeRate}%. Ejemplo con este plan: si quedan pendientes ${money(monthlyPeriodAmount, currency)}, la mora sería ${money(fixedLateFee, currency)} y ${frequencyText}${installmentsInPeriod > 1 ? `: ${money(fixedLateFee / installmentsInPeriod, currency)} por cuota` : ""}.`;
+  return `La mora es fija y no crece por días. Se aplica desde el día siguiente al vencimiento sobre el monto que quedó pendiente en esa fecha. ${lateFeePercentage}% de la tasa de interés mensual de ${monthlyInterestRate}% equivale a ${monthlyLateFeeRate}%. Ejemplo con este plan: si quedan pendientes ${money(monthlyPeriodAmount, currency)}, la mora sería ${money(fixedLateFee, currency)} y ${frequencyText}${installmentsInPeriod > 1 ? `: hasta ${money(fixedLateFee / installmentsInPeriod, currency)} por cada cuota vencida` : ""}.`;
 }
 
 function lateFeePolicyTextForFrequency(paymentFrequency: number, principalAmount?: number, monthlyInterestRate?: number, lateFeeDescription?: string, currency?: number, termMonths?: number) {

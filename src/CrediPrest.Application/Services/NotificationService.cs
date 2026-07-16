@@ -197,6 +197,7 @@ internal sealed class NotificationService(
             var loans = await dbContext.Loans
                 .Include(loan => loan.Client)
                 .Include(loan => loan.Installments)
+                .Include(loan => loan.Payments)
                 .Include(loan => loan.Charges)
                 .Where(loan => loan.Client.IsActive
                     && (loan.Status == LoanStatus.Active || loan.Status == LoanStatus.Overdue))
@@ -206,10 +207,10 @@ internal sealed class NotificationService(
             {
                 foreach (var period in LateFeeCalculator.BuildPeriods(loan))
                 {
-                    var firstInstallment = period.Installments[0];
+                    var periodInstallmentIds = period.Installments.Select(item => item.Id).ToHashSet();
                     var warningNotifications = paymentNotifications.Where(notification =>
                         notification.Type == NotificationType.LateFeeWarning
-                        && notification.RelatedEntityId == firstInstallment.Id).ToList();
+                        && periodInstallmentIds.Contains(notification.RelatedEntityId)).ToList();
                     var charge = loan.Charges.FirstOrDefault(item =>
                         item.Type == LoanChargeType.LateFee && item.PeriodNumber == period.Number);
                     var appliedNotifications = charge is null
@@ -220,7 +221,12 @@ internal sealed class NotificationService(
 
                     if (charge is not null)
                     {
-                        foreach (var notification in warningNotifications.Concat(appliedNotifications))
+                        foreach (var notification in warningNotifications)
+                        {
+                            dbContext.Notifications.Remove(notification);
+                        }
+
+                        foreach (var notification in appliedNotifications)
                         {
                             if (charge.AmountPaid >= charge.Amount)
                             {
@@ -237,22 +243,29 @@ internal sealed class NotificationService(
                             var clientMessage = $"Se aplicó una mora de {amount} al período de {month} de tu préstamo.";
                             await AddLateFeeNotificationsAsync(loan, NotificationType.LateFeeApplied, charge.Id, title, staffMessage, clientMessage, users, cancellationToken);
                         }
-
-                        continue;
                     }
 
-                    var hasPendingAmount = period.Installments.Any(item => item.AmountPaid < item.PaymentAmount);
-                    if (!hasPendingAmount || today < period.EndDate.AddDays(-7) || today >= period.EndDate)
+                    var nextInstallmentAtRisk = period.Installments
+                        .Where(item => item.AmountPaid < item.PaymentAmount
+                            && item.DueDate.Date >= today
+                            && item.DueDate.Date <= today.AddDays(7))
+                        .OrderBy(item => item.DueDate)
+                        .FirstOrDefault();
+                    foreach (var notification in warningNotifications.Where(notification =>
+                        nextInstallmentAtRisk is null || notification.RelatedEntityId != nextInstallmentAtRisk.Id))
                     {
-                        foreach (var notification in warningNotifications)
-                        {
-                            dbContext.Notifications.Remove(notification);
-                        }
+                        dbContext.Notifications.Remove(notification);
+                    }
 
+                    if (nextInstallmentAtRisk is null)
+                    {
                         continue;
                     }
 
-                    var estimatedLateFee = LateFeeCalculator.Calculate(loan, period.Installments, period.EndDate).Amount;
+                    var estimatedLateFee = LateFeeCalculator.Calculate(
+                        loan,
+                        [nextInstallmentAtRisk],
+                        nextInstallmentAtRisk.DueDate.Date.AddDays(1)).Amount;
                     if (estimatedLateFee <= 0)
                     {
                         continue;
@@ -260,10 +273,10 @@ internal sealed class NotificationService(
 
                     var warningTitle = "Mora próxima";
                     var warningAmount = FormatMoney(estimatedLateFee, loan.Currency);
-                    var warningMonth = FormatMonth(period.StartDate);
-                    var warningStaffMessage = $"{loan.Client.FullName} tiene pendiente el período de {warningMonth}. Si no regulariza antes del {period.EndDate:dd/MM/yyyy}, se aplicará una mora estimada de {warningAmount}.";
-                    var warningClientMessage = $"Tu período de {warningMonth} sigue pendiente. Si no regularizas antes del {period.EndDate:dd/MM/yyyy}, se aplicará una mora estimada de {warningAmount}.";
-                    await AddLateFeeNotificationsAsync(loan, NotificationType.LateFeeWarning, firstInstallment.Id, warningTitle, warningStaffMessage, warningClientMessage, users, cancellationToken);
+                    var dueDate = nextInstallmentAtRisk.DueDate.Date;
+                    var warningStaffMessage = $"{loan.Client.FullName} tiene pendiente la cuota {nextInstallmentAtRisk.InstallmentNumber}. Si no la completa a más tardar el {dueDate:dd/MM/yyyy}, desde el día siguiente se aplicará una mora estimada de {warningAmount}.";
+                    var warningClientMessage = $"Tu cuota {nextInstallmentAtRisk.InstallmentNumber} sigue pendiente. Si no la completas a más tardar el {dueDate:dd/MM/yyyy}, desde el día siguiente se aplicará una mora estimada de {warningAmount}.";
+                    await AddLateFeeNotificationsAsync(loan, NotificationType.LateFeeWarning, nextInstallmentAtRisk.Id, warningTitle, warningStaffMessage, warningClientMessage, users, cancellationToken);
                 }
             }
 

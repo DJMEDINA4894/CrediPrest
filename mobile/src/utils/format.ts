@@ -142,7 +142,7 @@ export function lateFeePolicyText(
     : paymentFrequency === 2
       ? `se reparte entre ${installmentsInPeriod} cuotas quincenales`
       : "se carga en la cuota mensual";
-  return `La mora es fija y no crece por dias. Al cerrar el periodo mensual se aplica ${monthlyLateFeeRate}% al monto pendiente de ese periodo. Ejemplo: sobre ${money(monthlyPeriodAmount, currency)}, la mora seria ${money(fixedLateFee, currency)} y ${frequencyText}${installmentsInPeriod > 1 ? `: ${money(fixedLateFee / installmentsInPeriod, currency)} por cuota` : ""}.`;
+  return `La mora es fija y no crece por dias. Se aplica desde el dia siguiente al vencimiento sobre el monto que quedo pendiente en esa fecha. ${lateFeePercentage}% de la tasa mensual de ${monthlyInterestRate}% equivale a ${monthlyLateFeeRate}%. Ejemplo: sobre ${money(monthlyPeriodAmount, currency)}, la mora seria ${money(fixedLateFee, currency)} y ${frequencyText}${installmentsInPeriod > 1 ? `: hasta ${money(fixedLateFee / installmentsInPeriod, currency)} por cada cuota vencida` : ""}.`;
 }
 
 export function effectiveInstallmentStatus(installment: Installment): InstallmentStatus {

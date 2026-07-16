@@ -413,12 +413,19 @@ internal sealed class LoanService(
         var loans = await dbContext.Loans
             .Include(loan => loan.Client)
             .Include(loan => loan.Installments)
+            .Include(loan => loan.Payments)
             .Include(loan => loan.Charges)
-            .Where(loan => loan.Client.IsActive && (loan.Status == LoanStatus.Active || loan.Status == LoanStatus.Overdue))
+            .Where(loan => loan.Client.IsActive)
             .ToListAsync(cancellationToken);
 
         foreach (var loan in loans)
         {
+            if (loan.Status == LoanStatus.Cancelled
+                && loan.Installments.Any(installment => installment.AmountPaid < installment.PaymentAmount))
+            {
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(loan.LateFeeDescription))
             {
                 loan.LateFeeDescription = "50%";
@@ -823,22 +830,39 @@ internal sealed class LoanService(
 
         foreach (var period in LateFeeCalculator.BuildPeriods(loan))
         {
-            var hasPendingAmount = period.Installments.Any(installment => installment.AmountPaid < installment.PaymentAmount);
-            if (today < period.EndDate || !hasPendingAmount)
+            var calculation = LateFeeCalculator.Calculate(loan, period.Installments, today);
+            var existingCharge = loan.Charges.FirstOrDefault(charge =>
+                charge.Type == LoanChargeType.LateFee && charge.PeriodNumber == period.Number);
+            var requiresFormulaMigration = existingCharge is not null
+                && (!existingCharge.Notes?.StartsWith("Mora fija por vencimiento", StringComparison.OrdinalIgnoreCase) ?? true);
+
+            if (calculation.Amount <= 0 || calculation.EligibleThroughDate is null)
             {
+                if (existingCharge is not null
+                    && (recalculateExistingCharges || requiresFormulaMigration)
+                    && existingCharge.AmountPaid < existingCharge.Amount)
+                {
+                    existingCharge.Amount = existingCharge.AmountPaid;
+                    existingCharge.Notes = "Mora recalculada sin saldo vencido en la fecha de pago.";
+                    existingCharge.AppliedAtUtc = DateTime.UtcNow;
+                }
+
                 continue;
             }
 
-            var calculation = LateFeeCalculator.Calculate(loan, period.Installments, today);
-            var lateFeeNotes = $"Mora fija del período: {calculation.MonthlyRate:0.##}% sobre {calculation.PendingPeriodAmount:N2} pendientes al cierre del {period.EndDate:dd/MM/yyyy}.";
-            var existingCharge = loan.Charges.FirstOrDefault(charge =>
-                charge.Type == LoanChargeType.LateFee && charge.PeriodNumber == period.Number);
+            var eligibleThroughDate = calculation.EligibleThroughDate.Value;
+            var lateFeeNotes = $"Mora fija por vencimiento: {calculation.MonthlyRate:0.##}% sobre {calculation.PendingPeriodAmount:N2} que seguían pendientes en sus fechas de pago hasta el {eligibleThroughDate:dd/MM/yyyy}.";
             if (existingCharge is not null)
             {
-                var requiresFormulaMigration = !existingCharge.Notes?.StartsWith("Mora fija del período", StringComparison.OrdinalIgnoreCase) ?? true;
-                if ((recalculateExistingCharges || requiresFormulaMigration) && existingCharge.AmountPaid < existingCharge.Amount)
+                var recalculatedAmount = Math.Max(existingCharge.AmountPaid, calculation.Amount);
+                if (recalculateExistingCharges
+                    || requiresFormulaMigration
+                    || existingCharge.Amount != recalculatedAmount
+                    || existingCharge.PeriodEndDate.Date != eligibleThroughDate)
                 {
-                    existingCharge.Amount = Math.Max(existingCharge.AmountPaid, calculation.Amount);
+                    existingCharge.Amount = recalculatedAmount;
+                    existingCharge.PeriodStartDate = period.StartDate;
+                    existingCharge.PeriodEndDate = eligibleThroughDate;
                     existingCharge.Notes = lateFeeNotes;
                     existingCharge.AppliedAtUtc = DateTime.UtcNow;
                 }
@@ -858,7 +882,7 @@ internal sealed class LoanService(
                 Type = LoanChargeType.LateFee,
                 PeriodNumber = period.Number,
                 PeriodStartDate = period.StartDate,
-                PeriodEndDate = period.EndDate,
+                PeriodEndDate = eligibleThroughDate,
                 Amount = calculation.Amount,
                 Notes = lateFeeNotes
             };

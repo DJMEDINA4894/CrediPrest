@@ -22,7 +22,8 @@ internal static class LateFeeCalculator
             {
                 var installments = group.OrderBy(item => item.InstallmentNumber).ToList();
                 var startDate = installments.Min(item => item.DueDate.Date);
-                return new LateFeePeriod(group.Key, installments, startDate, startDate.AddMonths(1));
+                var endDate = installments.Max(item => item.DueDate.Date);
+                return new LateFeePeriod(group.Key, installments, startDate, endDate);
             })
             .ToList();
     }
@@ -34,23 +35,24 @@ internal static class LateFeeCalculator
     {
         var percentage = ReadPercentage(loan.LateFeeDescription);
         var monthlyRate = loan.MonthlyInterestRate * percentage / 100m;
-        var pendingInstallments = installments
+        var overdueInstallments = installments
+            .Where(installment => installment.DueDate.Date < calculationDate.Date)
             .Select(installment => new
             {
                 Installment = installment,
-                PendingAmount = Math.Max(0, installment.PaymentAmount - installment.AmountPaid)
+                PendingAmount = GetAmountPendingAtDueDate(loan, installment)
             })
             .Where(item => item.PendingAmount > 0)
             .ToList();
-        var pendingPeriodAmount = pendingInstallments.Sum(item => item.PendingAmount);
+        var pendingPeriodAmount = overdueInstallments.Sum(item => item.PendingAmount);
         var lateFeeAmount = Math.Round(pendingPeriodAmount * monthlyRate / 100m, 2);
         var allocations = new List<LateFeeInstallmentAllocation>();
         var allocatedAmount = 0m;
 
-        for (var index = 0; index < pendingInstallments.Count; index++)
+        for (var index = 0; index < overdueInstallments.Count; index++)
         {
-            var item = pendingInstallments[index];
-            var isLast = index == pendingInstallments.Count - 1;
+            var item = overdueInstallments[index];
+            var isLast = index == overdueInstallments.Count - 1;
             var amount = isLast
                 ? lateFeeAmount - allocatedAmount
                 : pendingPeriodAmount > 0
@@ -66,7 +68,25 @@ internal static class LateFeeCalculator
             percentage,
             monthlyRate,
             pendingPeriodAmount,
+            overdueInstallments.Count == 0
+                ? null
+                : overdueInstallments.Max(item => item.Installment.DueDate.Date),
             allocations);
+    }
+
+    private static decimal GetAmountPendingAtDueDate(Loan loan, Installment installment)
+    {
+        var linkedPayments = loan.Payments
+            .Where(payment => payment.Type == PaymentType.Regular
+                && payment.InstallmentId == installment.Id)
+            .ToList();
+        var amountPaidByDueDate = linkedPayments.Count == 0
+            ? Math.Min(installment.PaymentAmount, Math.Max(0, installment.AmountPaid))
+            : linkedPayments
+                .Where(payment => payment.PaymentDate.Date <= installment.DueDate.Date)
+                .Sum(payment => payment.AmountPaid);
+
+        return Math.Max(0, installment.PaymentAmount - amountPaidByDueDate);
     }
 
     public static decimal ReadPercentage(string? value)
@@ -97,6 +117,7 @@ internal sealed record LateFeeCalculation(
     decimal Percentage,
     decimal MonthlyRate,
     decimal PendingPeriodAmount,
+    DateTime? EligibleThroughDate,
     IReadOnlyList<LateFeeInstallmentAllocation> Allocations);
 
 internal sealed record LateFeeInstallmentAllocation(

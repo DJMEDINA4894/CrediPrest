@@ -68,7 +68,7 @@ internal static class MappingExtensions
             .FirstOrDefault(item => item.Number == charge.PeriodNumber);
         var calculatedAllocations = period is null
             ? []
-            : LateFeeCalculator.Calculate(loan, period.Installments, charge.AppliedAtUtc.Date).Allocations;
+            : LateFeeCalculator.Calculate(loan, period.Installments, charge.PeriodEndDate.Date.AddDays(1)).Allocations;
         var calculatedTotal = calculatedAllocations.Sum(allocation => allocation.Amount);
         var allocationAmounts = new List<(LateFeeInstallmentAllocation Allocation, decimal Amount)>();
         var allocatedTotal = 0m;
