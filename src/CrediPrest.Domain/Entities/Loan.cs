@@ -13,6 +13,7 @@ public sealed class Loan
     public decimal PrincipalAmount { get; set; }
     public CurrencyType Currency { get; set; }
     public decimal MonthlyInterestRate { get; set; }
+    public AmortizationMethod AmortizationMethod { get; set; } = AmortizationMethod.FlatInterest;
     public int TermMonths { get; set; }
     public PaymentFrequency PaymentFrequency { get; set; }
     public DateTime StartDate { get; set; }

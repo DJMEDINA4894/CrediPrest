@@ -62,6 +62,7 @@ internal sealed class LoanService(
             PrincipalAmount = request.PrincipalAmount,
             Currency = request.Currency,
             MonthlyInterestRate = request.MonthlyInterestRate,
+            AmortizationMethod = AmortizationMethod.DecliningBalance,
             TermMonths = request.TermMonths,
             PaymentFrequency = request.PaymentFrequency,
             StartDate = request.StartDate.Date,
@@ -559,44 +560,27 @@ internal sealed class LoanService(
     private static IReadOnlyList<Installment> RecalculateLoan(Loan loan)
     {
         var installmentCount = GetInstallmentCount(loan.TermMonths, loan.PaymentFrequency);
-        var interestMonths = GetInterestMonthFactor(loan.TermMonths, loan.PaymentFrequency);
-        loan.TotalInterest = Math.Round(loan.PrincipalAmount * (loan.MonthlyInterestRate / 100m) * interestMonths, 2);
+        var schedule = CalculateInstallmentAmounts(
+            loan.PrincipalAmount,
+            loan.MonthlyInterestRate,
+            installmentCount,
+            loan.PaymentFrequency,
+            loan.AmortizationMethod);
+        loan.TotalInterest = Math.Round(schedule.Sum(item => item.Interest), 2);
         loan.TotalToPay = loan.PrincipalAmount + loan.TotalInterest;
-        var installments = new List<Installment>();
-
-        var basePrincipal = Math.Round(loan.PrincipalAmount / installmentCount, 2);
-        var baseInterest = Math.Round(loan.TotalInterest / installmentCount, 2);
-        var basePayment = basePrincipal + baseInterest;
-        var principalAllocated = 0m;
-        var interestAllocated = 0m;
-
-        for (var index = 1; index <= installmentCount; index++)
-        {
-            var principal = index == installmentCount
-                ? loan.PrincipalAmount - principalAllocated
-                : basePrincipal;
-            var interest = index == installmentCount
-                ? loan.TotalInterest - interestAllocated
-                : baseInterest;
-
-            principal = Math.Round(principal, 2);
-            interest = Math.Round(interest, 2);
-            principalAllocated += principal;
-            interestAllocated += interest;
-
-            installments.Add(new Installment
+        return schedule
+            .Select((item, index) => new Installment
             {
                 Loan = loan,
-                InstallmentNumber = index,
-                DueDate = GetDueDate(loan.StartDate, loan.PaymentFrequency, index),
-                PrincipalAmount = principal,
-                InterestAmount = interest,
-                PaymentAmount = index == installmentCount ? principal + interest : basePayment,
-                RemainingBalance = Math.Max(0, Math.Round(loan.PrincipalAmount - principalAllocated, 2))
-            });
-        }
-
-        return installments;
+                LoanId = loan.Id,
+                InstallmentNumber = index + 1,
+                DueDate = GetDueDate(loan.StartDate, loan.PaymentFrequency, index + 1),
+                PrincipalAmount = item.Principal,
+                InterestAmount = item.Interest,
+                PaymentAmount = item.Payment,
+                RemainingBalance = item.RemainingBalance
+            })
+            .ToList();
     }
 
     private static LoanRecalculationPlan BuildExtraordinaryPaymentPlan(
@@ -699,16 +683,19 @@ internal sealed class LoanService(
                 principalAfterPayment,
                 loan.MonthlyInterestRate,
                 loan.PaymentFrequency,
+                loan.AmortizationMethod,
                 pendingInstallments.Count,
                 currentPayment),
             LoanRecalculationMode.CustomTerm => ValidateCustomInstallmentCount(requestedInstallmentCount),
             _ => pendingInstallments.Count
         };
-        var newInterest = CalculateInterest(
+        var newSchedule = CalculateInstallmentAmounts(
             principalAfterPayment,
             loan.MonthlyInterestRate,
             newInstallmentCount,
-            loan.PaymentFrequency);
+            loan.PaymentFrequency,
+            loan.AmortizationMethod);
+        var newInterest = Math.Round(newSchedule.Sum(item => item.Interest), 2);
         var firstDueDate = GetFirstRecalculatedDueDate(
             pendingInstallments.Min(installment => installment.DueDate.Date),
             effectiveDate,
@@ -716,9 +703,7 @@ internal sealed class LoanService(
         var firstInstallmentNumber = firstPendingInstallmentNumber;
         var newInstallments = BuildInstallments(
             loan,
-            principalAfterPayment,
-            newInterest,
-            newInstallmentCount,
+            newSchedule,
             firstInstallmentNumber,
             firstDueDate);
         var newPayment = newInstallments[0].PaymentAmount;
@@ -968,13 +953,18 @@ internal sealed class LoanService(
         decimal principal,
         decimal monthlyInterestRate,
         PaymentFrequency frequency,
+        AmortizationMethod amortizationMethod,
         int maximumInstallments,
         decimal targetPayment)
     {
         for (var count = 1; count <= maximumInstallments; count++)
         {
-            var interest = CalculateInterest(principal, monthlyInterestRate, count, frequency);
-            var payment = Math.Round((principal + interest) / count, 2);
+            var payment = CalculateInstallmentAmounts(
+                principal,
+                monthlyInterestRate,
+                count,
+                frequency,
+                amortizationMethod)[0].Payment;
             if (payment <= targetPayment)
             {
                 return count;
@@ -984,14 +974,101 @@ internal sealed class LoanService(
         return maximumInstallments;
     }
 
-    private static decimal CalculateInterest(
+    private static IReadOnlyList<InstallmentAmounts> CalculateInstallmentAmounts(
+        decimal principal,
+        decimal monthlyInterestRate,
+        int installmentCount,
+        PaymentFrequency frequency,
+        AmortizationMethod amortizationMethod)
+        => amortizationMethod == AmortizationMethod.DecliningBalance
+            ? CalculateDecliningBalanceAmounts(principal, monthlyInterestRate, installmentCount, frequency)
+            : CalculateFlatInterestAmounts(principal, monthlyInterestRate, installmentCount, frequency);
+
+    private static IReadOnlyList<InstallmentAmounts> CalculateFlatInterestAmounts(
         decimal principal,
         decimal monthlyInterestRate,
         int installmentCount,
         PaymentFrequency frequency)
-        => Math.Round(
+    {
+        var totalInterest = Math.Round(
             principal * (monthlyInterestRate / 100m) * GetInterestMonthFactor(installmentCount, frequency),
             2);
+        var basePrincipal = Math.Round(principal / installmentCount, 2);
+        var baseInterest = Math.Round(totalInterest / installmentCount, 2);
+        var amounts = new List<InstallmentAmounts>(installmentCount);
+        var principalAllocated = 0m;
+        var interestAllocated = 0m;
+
+        for (var index = 0; index < installmentCount; index++)
+        {
+            var isLast = index == installmentCount - 1;
+            var installmentPrincipal = Math.Round(
+                isLast ? principal - principalAllocated : basePrincipal,
+                2);
+            var installmentInterest = Math.Round(
+                isLast ? totalInterest - interestAllocated : baseInterest,
+                2);
+            principalAllocated += installmentPrincipal;
+            interestAllocated += installmentInterest;
+            amounts.Add(new InstallmentAmounts(
+                installmentPrincipal,
+                installmentInterest,
+                installmentPrincipal + installmentInterest,
+                Math.Max(0, Math.Round(principal - principalAllocated, 2))));
+        }
+
+        return amounts;
+    }
+
+    private static IReadOnlyList<InstallmentAmounts> CalculateDecliningBalanceAmounts(
+        decimal principal,
+        decimal monthlyInterestRate,
+        int installmentCount,
+        PaymentFrequency frequency)
+    {
+        var periodicRate = GetPeriodicInterestRate(monthlyInterestRate, frequency);
+        if (periodicRate == 0)
+        {
+            return CalculateFlatInterestAmounts(principal, 0, installmentCount, frequency);
+        }
+
+        var discountFactor = 1m - (decimal)Math.Pow((double)(1m + periodicRate), -installmentCount);
+        if (discountFactor <= 0)
+        {
+            throw new InvalidOperationException("No se pudo calcular la cuota nivelada con la tasa indicada.");
+        }
+
+        var levelPayment = Math.Round(principal * periodicRate / discountFactor, 2);
+        var remainingPrincipal = principal;
+        var amounts = new List<InstallmentAmounts>(installmentCount);
+
+        for (var index = 0; index < installmentCount; index++)
+        {
+            var isLast = index == installmentCount - 1;
+            var installmentInterest = Math.Round(remainingPrincipal * periodicRate, 2);
+            var installmentPrincipal = isLast
+                ? remainingPrincipal
+                : Math.Min(remainingPrincipal, Math.Round(levelPayment - installmentInterest, 2));
+            installmentPrincipal = Math.Max(0, installmentPrincipal);
+            remainingPrincipal = Math.Max(0, Math.Round(remainingPrincipal - installmentPrincipal, 2));
+            amounts.Add(new InstallmentAmounts(
+                installmentPrincipal,
+                installmentInterest,
+                installmentPrincipal + installmentInterest,
+                remainingPrincipal));
+        }
+
+        return amounts;
+    }
+
+    private static decimal GetPeriodicInterestRate(decimal monthlyInterestRate, PaymentFrequency frequency)
+        => monthlyInterestRate / 100m / (frequency switch
+        {
+            PaymentFrequency.Weekly => 4m,
+            PaymentFrequency.Biweekly => 2m,
+            PaymentFrequency.Monthly => 1m,
+            _ => 1m
+        });
 
     private static DateTime GetFirstRecalculatedDueDate(
         DateTime contractualDueDate,
@@ -1003,43 +1080,24 @@ internal sealed class LoanService(
 
     private static List<Installment> BuildInstallments(
         Loan loan,
-        decimal principal,
-        decimal interest,
-        int installmentCount,
+        IReadOnlyList<InstallmentAmounts> schedule,
         int firstInstallmentNumber,
         DateTime firstDueDate)
     {
-        var installments = new List<Installment>(installmentCount);
-        var basePrincipal = Math.Round(principal / installmentCount, 2);
-        var baseInterest = Math.Round(interest / installmentCount, 2);
-        var principalAllocated = 0m;
-        var interestAllocated = 0m;
-
-        for (var index = 0; index < installmentCount; index++)
-        {
-            var isLast = index == installmentCount - 1;
-            var installmentPrincipal = isLast ? principal - principalAllocated : basePrincipal;
-            var installmentInterest = isLast ? interest - interestAllocated : baseInterest;
-            installmentPrincipal = Math.Round(installmentPrincipal, 2);
-            installmentInterest = Math.Round(installmentInterest, 2);
-            principalAllocated += installmentPrincipal;
-            interestAllocated += installmentInterest;
-
-            installments.Add(new Installment
+        return schedule
+            .Select((item, index) => new Installment
             {
                 Loan = loan,
                 LoanId = loan.Id,
                 InstallmentNumber = firstInstallmentNumber + index,
                 DueDate = index == 0 ? firstDueDate : GetDueDate(firstDueDate, loan.PaymentFrequency, index),
-                PrincipalAmount = installmentPrincipal,
-                InterestAmount = installmentInterest,
-                PaymentAmount = installmentPrincipal + installmentInterest,
-                RemainingBalance = Math.Max(0, Math.Round(principal - principalAllocated, 2)),
+                PrincipalAmount = item.Principal,
+                InterestAmount = item.Interest,
+                PaymentAmount = item.Payment,
+                RemainingBalance = item.RemainingBalance,
                 Status = InstallmentStatus.Pending
-            });
-        }
-
-        return installments;
+            })
+            .ToList();
     }
 
     private static int GetInstallmentCount(int termMonths, PaymentFrequency frequency)
@@ -1261,6 +1319,12 @@ internal sealed class LoanService(
             });
         }
     }
+
+    private sealed record InstallmentAmounts(
+        decimal Principal,
+        decimal Interest,
+        decimal Payment,
+        decimal RemainingBalance);
 
     private sealed record LoanRecalculationPlan(
         LoanRecalculationPreviewDto Preview,

@@ -44,6 +44,7 @@ public sealed record LoanDto(
     decimal PrincipalAmount,
     CurrencyType Currency,
     decimal MonthlyInterestRate,
+    AmortizationMethod AmortizationMethod,
     int TermMonths,
     PaymentFrequency PaymentFrequency,
     DateTime StartDate,

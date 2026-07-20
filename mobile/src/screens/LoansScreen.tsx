@@ -97,7 +97,9 @@ export function LoansScreen({ navigation }: Props) {
                   <Text style={styles.amount}>Interés: {loan.monthlyInterestRate}%</Text>
                   <InfoTooltip
                     title="Interés mensual"
-                    message={`La tasa de ${loan.monthlyInterestRate}% es mensual. La frecuencia ${frequencyLabels[loan.paymentFrequency].toLowerCase()} indica cada cuánto vence una cuota.`}
+                    message={`La tasa de ${loan.monthlyInterestRate}% es mensual. La frecuencia ${frequencyLabels[loan.paymentFrequency].toLowerCase()} indica cada cuánto vence una cuota. ${loan.amortizationMethod === 2
+                      ? "Este préstamo usa cuota nivelada: el interés se calcula sobre el capital pendiente y disminuye conforme se paga."
+                      : "Este préstamo existente conserva el interés plano calculado sobre el monto original."}`}
                   />
                 </View>
                 <Text style={styles.amount}>Frecuencia: {frequencyLabels[loan.paymentFrequency]}</Text>
