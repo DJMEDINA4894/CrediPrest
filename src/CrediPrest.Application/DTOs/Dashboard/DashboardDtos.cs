@@ -1,0 +1,26 @@
+namespace CrediPrest.Application.DTOs.Dashboard;
+
+public sealed record DashboardDto(
+    decimal TotalLoanedCordobas,
+    decimal TotalLoanedUsd,
+    decimal TotalRecoveredCordobas,
+    decimal TotalRecoveredUsd,
+    decimal PendingCordobas,
+    decimal PendingUsd,
+    decimal EstimatedInterestCordobas,
+    decimal EstimatedInterestUsd,
+    int ActiveClients,
+    int ActiveLoans,
+    int OverdueLoans,
+    int OverdueInstallments,
+    int DueTodayInstallments,
+    int DueThisWeekInstallments,
+    decimal PaidTodayCordobas,
+    decimal PaidTodayUsd,
+    decimal PaidThisWeekCordobas,
+    decimal PaidThisWeekUsd,
+    decimal PaidThisMonthCordobas,
+    decimal PaidThisMonthUsd,
+    int PaidTodayCount,
+    int PaidThisWeekCount,
+    int PaidThisMonthCount);
