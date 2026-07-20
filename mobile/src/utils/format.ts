@@ -11,6 +11,12 @@ export const statusLabels = {
   3: "Vencido"
 };
 
+export const frequencyLabels = {
+  1: "Semanal",
+  2: "Quincenal",
+  3: "Mensual"
+};
+
 export const installmentStatusLabels = {
   1: "Pendiente",
   2: "Parcial",
@@ -51,20 +57,7 @@ export function installmentPendingAmount(installment: Installment) {
 }
 
 export function canMakeExtraordinaryPayment(detail: LoanDetail) {
-  if (detail.loan.status !== 1 || detail.loan.pendingBalance <= 0 || detail.loan.lateFeesPending > 0) {
-    return false;
-  }
-
-  const today = dateInputValue();
-  const hasUnpaidLateFee = detail.charges.some((charge) => charge.pendingAmount > 0 || charge.amountPaid < charge.amount);
-  const hasIrregularInstallment = detail.installments.some((installment) => {
-    const isPending = installment.amountPaid < installment.paymentAmount;
-    const isPartial = installment.amountPaid > 0 && isPending;
-    const isOverdue = isPending && installment.dueDate.slice(0, 10) < today;
-    return isPartial || isOverdue;
-  });
-
-  return !hasUnpaidLateFee && !hasIrregularInstallment;
+  return detail.loan.status !== 2 && detail.loan.pendingBalance > 0;
 }
 
 function lateFeePeriodSize(paymentFrequency: number) {

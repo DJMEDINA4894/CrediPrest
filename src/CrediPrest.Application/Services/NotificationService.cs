@@ -40,6 +40,7 @@ internal sealed class NotificationService(
             .ToHashSet();
 
         return notifications
+            .Where(notification => IsVisibleNotification(notification, installments, charges, relatedLoanIds))
             .OrderBy(notification => GetRelatedDate(notification, installments, charges, relatedLoanIds))
             .ThenBy(notification => notification.IsRead)
             .ThenByDescending(notification => notification.CreatedAtUtc)
@@ -142,7 +143,8 @@ internal sealed class NotificationService(
                 NotificationType.LateFeeWarning =>
                     !notificationInstallments.TryGetValue(notification.RelatedEntityId, out var warningInstallment)
                     || !warningInstallment.Loan.Client.IsActive
-                    || warningInstallment.Loan.Status == LoanStatus.Cancelled,
+                    || warningInstallment.Loan.Status == LoanStatus.Cancelled
+                    || warningInstallment.AmountPaid >= warningInstallment.PaymentAmount,
                 NotificationType.LateFeeApplied =>
                     !notificationCharges.TryGetValue(notification.RelatedEntityId, out var charge)
                     || !charge.Loan.Client.IsActive
@@ -421,6 +423,26 @@ internal sealed class NotificationService(
                 : loanIds.Contains(notification.RelatedEntityId)
                     ? notification.CreatedAtUtc
                 : DateTime.MaxValue;
+
+    private static bool IsVisibleNotification(
+        Notification notification,
+        IReadOnlyDictionary<Guid, Installment> installments,
+        IReadOnlyDictionary<Guid, LoanCharge> charges,
+        IReadOnlySet<Guid> loanIds)
+        => notification.Type switch
+        {
+            NotificationType.OverdueInstallment
+                or NotificationType.DueTodayInstallment
+                or NotificationType.LateFeeWarning =>
+                installments.TryGetValue(notification.RelatedEntityId, out var installment)
+                && installment.AmountPaid < installment.PaymentAmount,
+            NotificationType.LateFeeApplied =>
+                charges.TryGetValue(notification.RelatedEntityId, out var charge)
+                && charge.AmountPaid < charge.Amount,
+            NotificationType.LateFeeRateChanged =>
+                loanIds.Contains(notification.RelatedEntityId),
+            _ => false
+        };
 
     private static string FormatMoney(decimal amount, CurrencyType currency)
         => $"{(currency == CurrencyType.Usd ? "USD" : "C$")} {amount:N2}";

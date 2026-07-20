@@ -15,7 +15,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "LoanRecalculation">;
 const modes = [
   { value: "1", label: "Reducir cuota y conservar pagos" },
   { value: "2", label: "Conservar cuota y reducir pagos" },
-  { value: "3", label: "Elegir nueva cantidad de pagos" }
+  { value: "3", label: "Elegir nueva cantidad de pagos" },
+  { value: "4", label: "Liquidar préstamo" }
 ];
 const paymentMethods = [
   { value: "1", label: "Efectivo" },
@@ -55,25 +56,29 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
     void load();
   }, [load]));
 
-  function requestPayload() {
+  function requestPayload(overrides?: { mode?: string; effectiveDate?: string; amount?: string }) {
+    const requestedMode = overrides?.mode ?? mode;
     return {
-      mode: Number(mode),
-      effectiveDate,
-      amount: Number(amount),
-      newInstallmentCount: mode === "3" ? Number(newInstallmentCount) : null
+      mode: Number(requestedMode),
+      effectiveDate: overrides?.effectiveDate ?? effectiveDate,
+      amount: Number(overrides?.amount ?? amount),
+      newInstallmentCount: requestedMode === "3" ? Number(newInstallmentCount) : null
     };
   }
 
-  async function calculatePreview() {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+  async function calculatePreview(overrides?: { mode?: string; effectiveDate?: string; amount?: string }) {
+    const requestedMode = overrides?.mode ?? mode;
+    const requestedDate = overrides?.effectiveDate ?? effectiveDate;
+    const requestedAmount = overrides?.amount ?? amount;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
       setError("La fecha del abono debe usar el formato AAAA-MM-DD.");
       return;
     }
-    if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+    if (requestedMode !== "4" && (!Number.isFinite(Number(requestedAmount)) || Number(requestedAmount) <= 0)) {
       setError("Ingresa un monto de abono mayor que cero.");
       return;
     }
-    if (mode === "3" && (!Number.isInteger(Number(newInstallmentCount)) || Number(newInstallmentCount) < 1 || Number(newInstallmentCount) > 120)) {
+    if (requestedMode === "3" && (!Number.isInteger(Number(newInstallmentCount)) || Number(newInstallmentCount) < 1 || Number(newInstallmentCount) > 120)) {
       setError("La nueva cantidad de pagos debe estar entre 1 y 120.");
       return;
     }
@@ -81,7 +86,14 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
     try {
       setLoading(true);
       setError("");
-      setPreview(await api.previewExtraordinaryPayment(route.params.loanId, requestPayload()));
+      const result = await api.previewExtraordinaryPayment(
+        route.params.loanId,
+        requestPayload({ mode: requestedMode, effectiveDate: requestedDate, amount: requestedAmount })
+      );
+      setPreview(result);
+      if (requestedMode === "4") {
+        setAmount(result.totalSettlementAmount.toFixed(2));
+      }
     } catch (err) {
       setPreview(null);
       setError(err instanceof Error ? err.message : "No se pudo calcular la vista previa.");
@@ -101,8 +113,10 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
         notes: notes.trim() || null
       });
       Alert.alert(
-        "Abono registrado",
-        "El abono se aplicó al capital y el nuevo plan quedó guardado.",
+        mode === "4" ? "Préstamo liquidado" : "Abono registrado",
+        mode === "4"
+          ? "El préstamo quedó cancelado y su historial fue conservado."
+          : "El abono se aplicó al capital y el nuevo plan quedó guardado.",
         [{ text: "Ver tabla", onPress: () => navigation.replace("LoanDetail", { loanId: updated.loan.id }) }]
       );
     } catch (err) {
@@ -120,17 +134,22 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
         <ErrorText text={error} />
         {detail ? (
           <>
-            <Card title={`Abono extraordinario - ${detail.loan.clientName}`}>
-              <Text style={styles.help}>El dinero se aplica directamente al capital. Las cuotas pagadas se conservan y solo se reemplaza el plan futuro.</Text>
+            <Card title={`${mode === "4" ? "Liquidar préstamo" : "Abono extraordinario"} - ${detail.loan.clientName}`}>
+              <Text style={styles.help}>
+                {mode === "4"
+                  ? "Se conserva el historial, se cobra lo generado hasta la fecha y se descuenta el interés futuro."
+                  : "El dinero se aplica directamente al capital. Las cuotas pagadas se conservan y solo se reemplaza el plan futuro."}
+              </Text>
               <Field
-                label="Monto del abono"
+                label={mode === "4" ? "Monto total a liquidar" : "Monto del abono"}
                 value={amount}
                 onChangeText={(value) => {
                   setAmount(value);
                   setPreview(null);
                 }}
-                placeholder="Ej. 1000"
+                placeholder={mode === "4" ? "Se calcula automáticamente" : "Ej. 1000"}
                 keyboardType="decimal-pad"
+                editable={mode !== "4"}
               />
               <SelectField
                 label="Modalidad"
@@ -139,12 +158,16 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
                 inputAccessory={(
                   <InfoTooltip
                     title="Modalidades del nuevo plan"
-                    message={"Reducir cuota: conserva la cantidad de pagos restantes y calcula una cuota menor.\n\nReducir pagos: mantiene una cuota aproximada a la actual y termina el préstamo antes.\n\nElegir cantidad: permite definir los pagos. Menos pagos elevan la cuota y suelen reducir el interés; más pagos bajan la cuota, pero pueden aumentar el interés total."}
+                    message={"Reducir cuota: conserva la cantidad de pagos restantes y calcula una cuota menor.\n\nReducir pagos: mantiene una cuota aproximada a la actual y termina el préstamo antes.\n\nElegir cantidad: permite definir los pagos. Menos pagos elevan la cuota y suelen reducir el interés; más pagos bajan la cuota, pero pueden aumentar el interés total.\n\nLiquidar préstamo: cobra capital pendiente, interés generado hasta la fecha y mora pendiente; el interés futuro se descuenta."}
                   />
                 )}
                 onChange={(value) => {
                   setMode(value);
                   setPreview(null);
+                  if (value === "4") {
+                    setAmount("");
+                    void calculatePreview({ mode: value, amount: "0" });
+                  }
                 }}
               />
               {mode === "3" ? (
@@ -165,6 +188,9 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
                 onChange={(value) => {
                   setEffectiveDate(value);
                   setPreview(null);
+                  if (mode === "4") {
+                    void calculatePreview({ mode: "4", effectiveDate: value, amount: "0" });
+                  }
                 }}
                 maximumDate={dateInputValue()}
               />
@@ -173,28 +199,52 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
                 label="Referencia"
                 value={referenceNumber}
                 onChangeText={setReferenceNumber}
-                placeholder={paymentMethod === "2" || paymentMethod === "3" ? "Obligatoria" : "Opcional"}
+                placeholder={paymentMethod === "2" || paymentMethod === "3" || paymentMethod === "5" ? "Obligatoria" : "Opcional"}
               />
               <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
-              <Text style={styles.rule}>El préstamo debe estar al día, sin cuotas parciales, vencidas ni mora pendiente.</Text>
-              <PrimaryButton title="Calcular vista previa" onPress={() => void calculatePreview()} loading={loading} />
+              <Text style={styles.rule}>
+                {mode === "4"
+                  ? "La liquidación incluye capital pendiente, interés generado hasta la fecha y mora pendiente."
+                  : "El préstamo debe estar al día, sin cuotas parciales, vencidas ni mora pendiente."}
+              </Text>
+              <PrimaryButton
+                title={mode === "4" ? "Actualizar liquidación" : "Calcular vista previa"}
+                onPress={() => void calculatePreview()}
+                loading={loading}
+              />
             </Card>
 
             {preview ? (
-              <Card title="Vista previa del abono y nuevo plan">
-                <PreviewRow label="Capital antes" value={money(preview.outstandingPrincipal, currency)} />
-                <PreviewRow label="Abono a capital" value={money(preview.extraordinaryPaymentAmount, currency)} highlight />
-                <PreviewRow label="Capital después" value={money(preview.principalAfterPayment, currency)} />
-                <PreviewRow label="Cuota actual" value={money(preview.currentInstallmentAmount, currency)} />
-                <PreviewRow label="Nueva cuota" value={money(preview.newInstallmentAmount, currency)} highlight />
-                <PreviewRow label="Pagos restantes" value={`${preview.currentRemainingInstallments} -> ${preview.newRemainingInstallments}`} />
-                <PreviewRow label="Interés pendiente actual" value={money(preview.currentPendingInterest, currency)} />
-                <PreviewRow label="Nuevo interés" value={money(preview.newInterest, currency)} />
-                <PreviewRow label={preview.interestSavings >= 0 ? "Ahorro de interés" : "Aumento de interés"} value={money(Math.abs(preview.interestSavings), currency)} />
-                <PreviewRow label="Nuevo pendiente" value={money(preview.newPendingTotal, currency)} />
-                <PreviewRow label="Primera cuota" value={dateOnly(preview.firstDueDate)} />
+              <Card title={mode === "4" ? "Resumen de liquidación" : "Vista previa del abono y nuevo plan"}>
+                {mode === "4" ? (
+                  <>
+                    <PreviewRow label="Capital pendiente" value={money(preview.outstandingPrincipal, currency)} />
+                    <PreviewRow label="Interés generado" value={money(preview.accruedInterest, currency)} />
+                    <PreviewRow label="Mora pendiente" value={money(preview.pendingLateFees, currency)} />
+                    <PreviewRow label="Interés futuro descontado" value={money(preview.futureInterestDiscount, currency)} />
+                    <PreviewRow label="Total exacto a liquidar" value={money(preview.totalSettlementAmount, currency)} highlight />
+                  </>
+                ) : (
+                  <>
+                    <PreviewRow label="Capital antes" value={money(preview.outstandingPrincipal, currency)} />
+                    <PreviewRow label="Abono a capital" value={money(preview.extraordinaryPaymentAmount, currency)} highlight />
+                    <PreviewRow label="Capital después" value={money(preview.principalAfterPayment, currency)} />
+                    <PreviewRow label="Cuota actual" value={money(preview.currentInstallmentAmount, currency)} />
+                    <PreviewRow label="Nueva cuota" value={money(preview.newInstallmentAmount, currency)} highlight />
+                    <PreviewRow label="Pagos restantes" value={`${preview.currentRemainingInstallments} -> ${preview.newRemainingInstallments}`} />
+                    <PreviewRow label="Interés pendiente actual" value={money(preview.currentPendingInterest, currency)} />
+                    <PreviewRow label="Nuevo interés" value={money(preview.newInterest, currency)} />
+                    <PreviewRow label={preview.interestSavings >= 0 ? "Ahorro de interés" : "Aumento de interés"} value={money(Math.abs(preview.interestSavings), currency)} />
+                    <PreviewRow label="Nuevo pendiente" value={money(preview.newPendingTotal, currency)} />
+                    <PreviewRow label="Primera cuota" value={dateOnly(preview.firstDueDate)} />
+                  </>
+                )}
                 <View style={styles.confirm}>
-                  <PrimaryButton title="Confirmar abono y nuevo plan" onPress={() => void applyExtraordinaryPayment()} loading={saving} />
+                  <PrimaryButton
+                    title={mode === "4" ? "Confirmar liquidación" : "Confirmar abono y nuevo plan"}
+                    onPress={() => void applyExtraordinaryPayment()}
+                    loading={saving}
+                  />
                 </View>
               </Card>
             ) : null}

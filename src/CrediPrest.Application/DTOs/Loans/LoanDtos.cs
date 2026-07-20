@@ -124,4 +124,8 @@ public sealed record LoanRecalculationPreviewDto(
     decimal CurrentPendingInterest,
     decimal NewInterest,
     decimal InterestSavings,
-    decimal NewPendingTotal);
+    decimal NewPendingTotal,
+    decimal AccruedInterest,
+    decimal PendingLateFees,
+    decimal FutureInterestDiscount,
+    decimal TotalSettlementAmount);

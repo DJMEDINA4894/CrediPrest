@@ -13,7 +13,7 @@ import { shareLoanAgreement, shareLoanPaymentPlan } from "../utils/loanDocuments
 
 type Props = NativeStackScreenProps<RootStackParamList, "LoanDetail">;
 
-function paidBreakdown(detail: LoanDetail) {
+function loanBreakdown(detail: LoanDetail) {
   const installmentBreakdown = detail.installments.reduce(
     (total, installment) => {
       const paidInterest = Math.min(Math.max(0, installment.amountPaid), installment.interestAmount);
@@ -34,9 +34,18 @@ function paidBreakdown(detail: LoanDetail) {
     ? Math.max(0, detail.loan.principalAmount - installmentBreakdown.outstandingPrincipal)
     : installmentBreakdown.principal;
 
+  const paidPrincipal = Math.max(detail.loan.paidPrincipal ?? 0, installmentBreakdown.principal, inferredPaidPrincipal);
+  const paidInterest = Math.max(detail.loan.paidInterest ?? 0, installmentBreakdown.interest);
+
   return {
-    principal: Math.max(detail.loan.paidPrincipal ?? 0, installmentBreakdown.principal, inferredPaidPrincipal),
-    interest: Math.max(detail.loan.paidInterest ?? 0, installmentBreakdown.interest)
+    paid: {
+      principal: paidPrincipal,
+      interest: paidInterest
+    },
+    pending: {
+      principal: Math.max(0, detail.loan.principalAmount - paidPrincipal),
+      interest: Math.max(0, detail.loan.totalInterest - paidInterest)
+    }
   };
 }
 
@@ -63,7 +72,9 @@ export function LoanDetailScreen({ route, navigation }: Props) {
   }, [load]));
 
   const currency = detail ? currencyLabels[detail.loan.currency] : "C$";
-  const paid = detail ? paidBreakdown(detail) : { principal: 0, interest: 0 };
+  const breakdown = detail
+    ? loanBreakdown(detail)
+    : { paid: { principal: 0, interest: 0 }, pending: { principal: 0, interest: 0 } };
   const lateFeeExplanation = detail?.loan.lateFeeDescription
     ? lateFeePolicyText(
       detail.loan.paymentFrequency,
@@ -101,10 +112,19 @@ export function LoanDetailScreen({ route, navigation }: Props) {
             <Card title={detail.loan.clientName}>
               {detail.loan.referenceName ? <Text style={styles.muted}>Referencia: {detail.loan.referenceName}</Text> : null}
               <Text style={styles.total}>Total: {money(detail.loan.totalToPay, currency)}</Text>
-              <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
+              <View style={styles.dueRow}>
+                <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
+                <PaidBreakdownInfo principal={breakdown.paid.principal} interest={breakdown.paid.interest} currency={currency} kind="paid" />
+              </View>
               <View style={styles.dueRow}>
                 <Text style={styles.due}>Debe: {money(detail.loan.pendingBalance, currency)}</Text>
-                <PaidBreakdownInfo principal={paid.principal} interest={paid.interest} currency={currency} />
+                <PaidBreakdownInfo
+                  principal={breakdown.pending.principal}
+                  interest={breakdown.pending.interest}
+                  lateFees={detail.loan.lateFeesPending}
+                  currency={currency}
+                  kind="pending"
+                />
               </View>
               {detail.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
@@ -114,12 +134,6 @@ export function LoanDetailScreen({ route, navigation }: Props) {
               ) : null}
               {detail.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(detail.loan.lateFeesPending, currency)}</Text> : null}
               <View style={styles.actionGrid}>
-                <View style={styles.actionCell}>
-                  <GhostButton title={documentAction === "pdf" ? "Generando..." : "Descargar PDF"} onPress={() => void shareDocument("pdf")} />
-                </View>
-                <View style={styles.actionCell}>
-                  <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Descargar acuerdo"} onPress={() => void shareDocument("agreement")} />
-                </View>
                 {detail.loan.status !== 2 ? (
                   <View style={styles.actionCell}>
                     <GhostButton title="Registrar pago" onPress={() => navigation.navigate("Payments", { loan: detail.loan })} />
@@ -127,9 +141,15 @@ export function LoanDetailScreen({ route, navigation }: Props) {
                 ) : null}
                 {canMakeExtraordinaryPayment(detail) ? (
                   <View style={styles.actionCell}>
-                    <GhostButton title="Abono extraordinario" onPress={() => navigation.navigate("LoanRecalculation", { loanId: detail.loan.id })} />
+                    <GhostButton title="Abono o liquidación" onPress={() => navigation.navigate("LoanRecalculation", { loanId: detail.loan.id })} />
                   </View>
                 ) : null}
+                <View style={styles.actionCell}>
+                  <GhostButton title={documentAction === "pdf" ? "Generando..." : "Descargar tabla"} onPress={() => void shareDocument("pdf")} />
+                </View>
+                <View style={styles.actionCell}>
+                  <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Descargar acuerdo"} onPress={() => void shareDocument("agreement")} />
+                </View>
               </View>
             </Card>
 

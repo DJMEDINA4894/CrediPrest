@@ -115,7 +115,7 @@ export interface LoanDetail {
 
 export interface LoanRecalculationPreview {
   loanId: string;
-  mode: 1 | 2 | 3;
+  mode: 1 | 2 | 3 | 4;
   effectiveDate: string;
   firstDueDate: string;
   outstandingPrincipal: number;
@@ -130,6 +130,10 @@ export interface LoanRecalculationPreview {
   newInterest: number;
   interestSavings: number;
   newPendingTotal: number;
+  accruedInterest: number;
+  pendingLateFees: number;
+  futureInterestDiscount: number;
+  totalSettlementAmount: number;
 }
 
 export interface Payment {
@@ -139,13 +143,13 @@ export interface Payment {
   loanChargeId?: string;
   paymentDate: string;
   amountPaid: number;
-  type: 1 | 2;
+  type: 1 | 2 | 3;
   paymentMethod: PaymentMethod;
   referenceNumber?: string;
   notes?: string;
   receiptId?: string;
   receiptFileName?: string;
-  recalculationMode?: 1 | 2 | 3;
+  recalculationMode?: 1 | 2 | 3 | 4;
   previousOutstandingPrincipal?: number;
   newOutstandingPrincipal?: number;
   previousInstallmentAmount?: number;

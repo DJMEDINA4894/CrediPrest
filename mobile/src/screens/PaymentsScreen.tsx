@@ -289,9 +289,13 @@ export function PaymentsScreen({ route, navigation }: Props) {
                     <Text style={styles.paymentAmount}>{money(payment.amountPaid, currency)}</Text>
                     <Text style={styles.muted}>{dateOnly(payment.paymentDate)} · {paymentMethodLabels[payment.paymentMethod]}</Text>
                   </View>
-                  {payment.type === 2 ? <Text style={styles.extraordinaryBadge}>Abono extraordinario</Text> : payment.receiptId ? <Text style={styles.receiptBadge}>Comprobante</Text> : null}
+                  {payment.type === 2 || payment.type === 3 ? (
+                    <Text style={styles.extraordinaryBadge}>
+                      {payment.type === 3 ? "Liquidación total" : "Abono extraordinario"}
+                    </Text>
+                  ) : payment.receiptId ? <Text style={styles.receiptBadge}>Comprobante</Text> : null}
                 </View>
-                {payment.type === 2 ? (
+                {payment.type === 2 || payment.type === 3 ? (
                   <View style={styles.extraordinarySummary}>
                     {payment.previousOutstandingPrincipal != null && payment.newOutstandingPrincipal != null ? (
                       <Text style={styles.muted}>Capital: {money(payment.previousOutstandingPrincipal, currency)} → {money(payment.newOutstandingPrincipal, currency)}</Text>

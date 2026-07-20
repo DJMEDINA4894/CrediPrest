@@ -799,7 +799,7 @@ td small {
 }
 
 .loans-table-wrap table {
-  min-width: 980px;
+  min-width: 1120px;
 }
 
 .loans-table-wrap th,
@@ -896,6 +896,13 @@ td small {
 }
 
 .debt-with-info {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.15rem;
+  white-space: nowrap;
+}
+
+.table-value-with-info {
   align-items: center;
   display: inline-flex;
   gap: 0.15rem;

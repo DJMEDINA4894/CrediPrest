@@ -179,6 +179,7 @@ internal sealed class LoanService(
         ExtraordinaryPaymentPreviewRequest request,
         CancellationToken cancellationToken = default)
     {
+        await RefreshOverdueAsync(cancellationToken);
         var loan = await LoadLoanAsync(id, cancellationToken);
         return BuildExtraordinaryPaymentPlan(
             loan,
@@ -204,6 +205,7 @@ internal sealed class LoanService(
             throw new InvalidOperationException("Ingresa la referencia de la transferencia, depósito o Kash.");
         }
 
+        await RefreshOverdueAsync(cancellationToken);
         await LoanDataOperationLock.Gate.WaitAsync(cancellationToken);
         try
         {
@@ -222,6 +224,19 @@ internal sealed class LoanService(
                 request.EffectiveDate,
                 request.Amount,
                 request.NewInstallmentCount);
+            if (request.Mode == LoanRecalculationMode.Payoff)
+            {
+                ValidateSettlementAmount(request.Amount, plan.Preview.TotalSettlementAmount);
+                await ApplyLoanPayoffAsync(loan, plan, request, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                if (transaction is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+
+                return (await LoadLoanAsync(id, cancellationToken)).ToDetailDto();
+            }
+
             var replacedInstallmentIds = plan.InstallmentsToReplace.Select(installment => installment.Id).ToArray();
             if (replacedInstallmentIds.Length > 0)
             {
@@ -420,8 +435,7 @@ internal sealed class LoanService(
 
         foreach (var loan in loans)
         {
-            if (loan.Status == LoanStatus.Cancelled
-                && loan.Installments.Any(installment => installment.AmountPaid < installment.PaymentAmount))
+            if (loan.Status == LoanStatus.Cancelled)
             {
                 continue;
             }
@@ -598,14 +612,36 @@ internal sealed class LoanService(
             throw new InvalidOperationException("La fecha del abono debe estar entre la fecha de inicio del préstamo y hoy.");
         }
 
+        var orderedInstallments = loan.Installments
+            .OrderBy(installment => installment.InstallmentNumber)
+            .ToList();
+        var pendingInstallments = orderedInstallments
+            .Where(installment => installment.AmountPaid < installment.PaymentAmount)
+            .ToList();
+        var pendingCharges = loan.Charges
+            .Where(charge => charge.AmountPaid < charge.Amount)
+            .OrderBy(charge => charge.PeriodNumber)
+            .ToList();
+        if (pendingInstallments.Count == 0 && pendingCharges.Count == 0)
+        {
+            throw new InvalidOperationException("El préstamo no tiene cuotas pendientes para aplicar el abono.");
+        }
+
+        if (mode == LoanRecalculationMode.Payoff)
+        {
+            return BuildLoanPayoffPlan(
+                loan,
+                effectiveDate,
+                orderedInstallments,
+                pendingInstallments,
+                pendingCharges);
+        }
+
         if (extraordinaryAmount <= 0)
         {
             throw new InvalidOperationException("El abono extraordinario debe ser mayor que cero.");
         }
 
-        var orderedInstallments = loan.Installments
-            .OrderBy(installment => installment.InstallmentNumber)
-            .ToList();
         var partiallyPaid = orderedInstallments.Any(installment =>
             installment.AmountPaid > 0 && installment.AmountPaid < installment.PaymentAmount);
         if (partiallyPaid)
@@ -613,20 +649,12 @@ internal sealed class LoanService(
             throw new InvalidOperationException("Completa primero la cuota parcialmente pagada antes de realizar un abono extraordinario.");
         }
 
-        var pendingInstallments = orderedInstallments
-            .Where(installment => installment.AmountPaid < installment.PaymentAmount)
-            .ToList();
-        if (pendingInstallments.Count == 0)
-        {
-            throw new InvalidOperationException("El préstamo no tiene cuotas pendientes para aplicar el abono.");
-        }
-
         if (pendingInstallments.Any(installment => installment.DueDate.Date < BusinessClock.Today))
         {
             throw new InvalidOperationException("Debes cancelar las cuotas vencidas antes de realizar un abono extraordinario.");
         }
 
-        if (loan.Charges.Any(charge => charge.AmountPaid < charge.Amount))
+        if (pendingCharges.Count > 0)
         {
             throw new InvalidOperationException("Debes cancelar la mora pendiente antes de recalcular el préstamo.");
         }
@@ -684,7 +712,7 @@ internal sealed class LoanService(
             firstInstallmentNumber,
             firstDueDate);
         var newPayment = newInstallments[0].PaymentAmount;
-        var preview = new LoanRecalculationPreviewDto(
+            var preview = new LoanRecalculationPreviewDto(
             loan.Id,
             mode,
             effectiveDate,
@@ -700,13 +728,218 @@ internal sealed class LoanService(
             pendingInstallments.Sum(installment => installment.InterestAmount),
             newInterest,
             Math.Round(pendingInstallments.Sum(installment => installment.InterestAmount) - newInterest, 2),
-            Math.Round(principalAfterPayment + newInterest, 2));
+            Math.Round(principalAfterPayment + newInterest, 2),
+            0,
+            0,
+            0,
+            0);
 
         return new LoanRecalculationPlan(
             preview,
             pendingInstallments,
             newInstallments,
             paidInstallments.Sum(installment => installment.InterestAmount));
+    }
+
+    private static LoanRecalculationPlan BuildLoanPayoffPlan(
+        Loan loan,
+        DateTime effectiveDate,
+        IReadOnlyList<Installment> orderedInstallments,
+        List<Installment> pendingInstallments,
+        List<LoanCharge> pendingCharges)
+    {
+        var allocations = pendingInstallments
+            .Select(installment =>
+            {
+                var amountPaid = Math.Max(0, installment.AmountPaid);
+                var paidInterest = Math.Min(amountPaid, installment.InterestAmount);
+                var paidPrincipal = Math.Min(
+                    installment.PrincipalAmount,
+                    Math.Max(0, amountPaid - paidInterest));
+                return new LoanPayoffAllocation(
+                    installment,
+                    Math.Round(paidInterest, 2),
+                    Math.Round(paidPrincipal, 2),
+                    Math.Round(Math.Max(0, installment.PrincipalAmount - paidPrincipal), 2),
+                    Math.Round(Math.Max(0, installment.InterestAmount - paidInterest), 2),
+                    0);
+            })
+            .ToList();
+
+        foreach (var allocation in allocations.Where(item => item.Installment.DueDate.Date <= effectiveDate))
+        {
+            allocation.AccruedInterest = allocation.UnpaidScheduledInterest;
+        }
+
+        var firstFutureAllocation = allocations
+            .Where(item => item.Installment.DueDate.Date > effectiveDate)
+            .OrderBy(item => item.Installment.DueDate)
+            .FirstOrDefault();
+        if (firstFutureAllocation is not null)
+        {
+            var previousDueDate = orderedInstallments
+                .Where(installment => installment.DueDate.Date < firstFutureAllocation.Installment.DueDate.Date)
+                .OrderByDescending(installment => installment.DueDate)
+                .Select(installment => installment.DueDate.Date)
+                .FirstOrDefault();
+            var periodStartDate = previousDueDate == default
+                ? loan.StartDate.Date
+                : previousDueDate;
+            var periodDays = Math.Max(1, (firstFutureAllocation.Installment.DueDate.Date - periodStartDate).Days);
+            var elapsedDays = Math.Clamp((effectiveDate - periodStartDate).Days, 0, periodDays);
+            var grossAccruedInterest = Math.Round(
+                firstFutureAllocation.Installment.InterestAmount * elapsedDays / periodDays,
+                2);
+            firstFutureAllocation.AccruedInterest = Math.Round(
+                Math.Max(0, grossAccruedInterest - firstFutureAllocation.PaidInterest),
+                2);
+        }
+
+        var outstandingPrincipal = Math.Round(allocations.Sum(item => item.OutstandingPrincipal), 2);
+        var currentPendingInterest = Math.Round(allocations.Sum(item => item.UnpaidScheduledInterest), 2);
+        var accruedInterest = Math.Round(allocations.Sum(item => item.AccruedInterest), 2);
+        var pendingLateFees = Math.Round(
+            pendingCharges.Sum(charge => Math.Max(0, charge.Amount - charge.AmountPaid)),
+            2);
+        var futureInterestDiscount = Math.Round(
+            Math.Max(0, currentPendingInterest - accruedInterest),
+            2);
+        var totalSettlementAmount = Math.Round(
+            outstandingPrincipal + accruedInterest + pendingLateFees,
+            2);
+        if (totalSettlementAmount <= 0)
+        {
+            throw new InvalidOperationException("El préstamo no tiene saldo pendiente para liquidar.");
+        }
+
+        var paidInstallments = orderedInstallments.Count(installment =>
+            installment.AmountPaid >= installment.PaymentAmount);
+        var currentInstallmentAmount = pendingInstallments
+            .OrderBy(installment => installment.InstallmentNumber)
+            .Select(installment => installment.PaymentAmount)
+            .FirstOrDefault();
+        var preview = new LoanRecalculationPreviewDto(
+            loan.Id,
+            LoanRecalculationMode.Payoff,
+            effectiveDate,
+            effectiveDate,
+            outstandingPrincipal,
+            totalSettlementAmount,
+            0,
+            currentInstallmentAmount,
+            0,
+            paidInstallments,
+            pendingInstallments.Count,
+            0,
+            currentPendingInterest,
+            0,
+            futureInterestDiscount,
+            0,
+            accruedInterest,
+            pendingLateFees,
+            futureInterestDiscount,
+            totalSettlementAmount);
+
+        return new LoanRecalculationPlan(
+            preview,
+            pendingInstallments,
+            [],
+            orderedInstallments
+                .Where(installment => installment.AmountPaid >= installment.PaymentAmount)
+                .Sum(installment => installment.InterestAmount),
+            allocations,
+            pendingCharges);
+    }
+
+    private async Task ApplyLoanPayoffAsync(
+        Loan loan,
+        LoanRecalculationPlan plan,
+        RegisterExtraordinaryPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var allocations = plan.PayoffAllocations
+            ?? throw new InvalidOperationException("No se pudo calcular la distribución de la liquidación.");
+        var charges = plan.ChargesToPay ?? [];
+        var relatedEntityIds = allocations
+            .Select(item => item.Installment.Id)
+            .Concat(charges.Select(charge => charge.Id))
+            .Distinct()
+            .ToArray();
+        if (relatedEntityIds.Length > 0)
+        {
+            var obsoleteNotifications = await dbContext.Notifications
+                .Where(notification => relatedEntityIds.Contains(notification.RelatedEntityId))
+                .ToListAsync(cancellationToken);
+            dbContext.Notifications.RemoveRange(obsoleteNotifications);
+        }
+
+        foreach (var allocation in allocations)
+        {
+            var installment = allocation.Installment;
+            installment.InterestAmount = Math.Round(
+                allocation.PaidInterest + allocation.AccruedInterest,
+                2);
+            installment.PaymentAmount = Math.Round(
+                installment.PrincipalAmount + installment.InterestAmount,
+                2);
+            installment.AmountPaid = installment.PaymentAmount;
+            installment.RemainingBalance = 0;
+            installment.Status = InstallmentStatus.Paid;
+            installment.PaidAtUtc = DateTime.UtcNow;
+        }
+
+        foreach (var charge in charges)
+        {
+            charge.AmountPaid = charge.Amount;
+        }
+
+        var preview = plan.Preview;
+        var systemNotes =
+            $"Liquidación total. Capital pendiente: {preview.OutstandingPrincipal:N2}; " +
+            $"interés generado: {preview.AccruedInterest:N2}; mora pendiente: {preview.PendingLateFees:N2}; " +
+            $"interés futuro descontado: {preview.FutureInterestDiscount:N2}.";
+        var userNotes = NormalizeOptional(request.Notes);
+        var payment = new Payment
+        {
+            Loan = loan,
+            LoanId = loan.Id,
+            PaymentDate = request.EffectiveDate.Date,
+            AmountPaid = preview.TotalSettlementAmount,
+            Type = PaymentType.LoanPayoff,
+            PaymentMethod = request.PaymentMethod,
+            ReferenceNumber = NormalizeOptional(request.ReferenceNumber),
+            Notes = userNotes is null ? systemNotes : $"{systemNotes} {userNotes}",
+            RecalculationMode = LoanRecalculationMode.Payoff,
+            PreviousOutstandingPrincipal = preview.OutstandingPrincipal,
+            NewOutstandingPrincipal = 0,
+            PreviousInstallmentAmount = preview.CurrentInstallmentAmount,
+            NewInstallmentAmount = 0,
+            PreviousInstallmentCount = preview.CurrentRemainingInstallments,
+            NewInstallmentCount = 0,
+            PreviousPendingInterest = preview.CurrentPendingInterest,
+            NewPendingInterest = 0
+        };
+        loan.Payments.Add(payment);
+        dbContext.Payments.Add(payment);
+
+        loan.TotalInterest = Math.Round(loan.Installments.Sum(installment => installment.InterestAmount), 2);
+        loan.TotalToPay = Math.Round(loan.PrincipalAmount + loan.TotalInterest, 2);
+        loan.EndDate = request.EffectiveDate.Date;
+        loan.Status = LoanStatus.Cancelled;
+    }
+
+    private static void ValidateSettlementAmount(decimal receivedAmount, decimal settlementAmount)
+    {
+        if (receivedAmount <= 0)
+        {
+            throw new InvalidOperationException("El monto recibido para liquidar debe ser mayor que cero.");
+        }
+
+        if (Math.Abs(receivedAmount - settlementAmount) > 0.01m)
+        {
+            throw new InvalidOperationException(
+                $"El monto exacto para liquidar el préstamo es {settlementAmount:N2}. Actualiza la vista previa antes de confirmar.");
+        }
     }
 
     private static int ValidateCustomInstallmentCount(int? installmentCount)
@@ -1021,7 +1254,25 @@ internal sealed class LoanService(
         LoanRecalculationPreviewDto Preview,
         List<Installment> InstallmentsToReplace,
         List<Installment> NewInstallments,
-        decimal PaidInterest);
+        decimal PaidInterest,
+        IReadOnlyList<LoanPayoffAllocation>? PayoffAllocations = null,
+        IReadOnlyList<LoanCharge>? ChargesToPay = null);
+
+    private sealed class LoanPayoffAllocation(
+        Installment installment,
+        decimal paidInterest,
+        decimal paidPrincipal,
+        decimal outstandingPrincipal,
+        decimal unpaidScheduledInterest,
+        decimal accruedInterest)
+    {
+        public Installment Installment { get; } = installment;
+        public decimal PaidInterest { get; } = paidInterest;
+        public decimal PaidPrincipal { get; } = paidPrincipal;
+        public decimal OutstandingPrincipal { get; } = outstandingPrincipal;
+        public decimal UnpaidScheduledInterest { get; } = unpaidScheduledInterest;
+        public decimal AccruedInterest { get; set; } = accruedInterest;
+    }
 }
 
 internal static class LoanDataOperationLock

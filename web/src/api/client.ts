@@ -4,6 +4,7 @@ const LOCAL_API_URL = "http://localhost:5052/api";
 const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
 const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? PRODUCTION_API_URL : LOCAL_API_URL);
 const TOKEN_KEY = "crediprest.token";
+const SESSION_STARTED_AT_KEY = "crediprest.session.startedAt";
 
 export class ApiRequestError extends Error {
   constructor(message: string, public readonly statusCode: number) {
@@ -16,12 +17,19 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export function getSessionStartedAt() {
+  const value = Number(localStorage.getItem(SESSION_STARTED_AT_KEY));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(SESSION_STARTED_AT_KEY, String(Date.now()));
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(SESSION_STARTED_AT_KEY);
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

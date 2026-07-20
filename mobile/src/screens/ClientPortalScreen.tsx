@@ -8,9 +8,10 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
+import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
-import { currencyLabels, dateOnly, effectiveInstallmentStatus, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money, monthYear } from "../utils/format";
+import { currencyLabels, dateOnly, effectiveInstallmentStatus, frequencyLabels, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money, monthYear } from "../utils/format";
 import { shareLoanPaymentPlan } from "../utils/loanDocuments";
 
 export function ClientPortalScreen() {
@@ -89,9 +90,28 @@ export function ClientPortalScreen() {
         {plans.length === 0 ? <EmptyState text="No tienes prestamos activos registrados para mostrar." /> : null}
         {plans.map((plan) => {
           const currency = currencyLabels[plan.loan.currency];
+          const pendingPrincipal = Math.max(0, plan.loan.principalAmount - (plan.loan.paidPrincipal ?? 0));
+          const pendingInterest = Math.max(0, plan.loan.totalInterest - (plan.loan.paidInterest ?? 0));
           return (
             <Card key={plan.loan.id} title={plan.loan.referenceName ?? "Prestamo"}>
-              <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.due}>Debe: {money(plan.loan.pendingBalance, currency)}</Text>
+                <PaidBreakdownInfo
+                  principal={pendingPrincipal}
+                  interest={pendingInterest}
+                  lateFees={plan.loan.lateFeesPending}
+                  currency={currency}
+                  kind="pending"
+                />
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.muted}>Interés: {plan.loan.monthlyInterestRate}%</Text>
+                <InfoTooltip
+                  title="Interés mensual"
+                  message={`La tasa de ${plan.loan.monthlyInterestRate}% es mensual. La frecuencia ${frequencyLabels[plan.loan.paymentFrequency].toLowerCase()} indica cada cuánto vence una cuota.`}
+                />
+              </View>
+              <Text style={styles.muted}>Frecuencia: {frequencyLabels[plan.loan.paymentFrequency]}</Text>
               {plan.loan.lateFeeDescription ? (
                 <View style={styles.lateFeeSummary}>
                   <Text style={styles.muted}>Mora configurada: {plan.loan.lateFeeDescription}</Text>
@@ -104,7 +124,7 @@ export function ClientPortalScreen() {
               {plan.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(plan.loan.lateFeesPending, currency)}</Text> : null}
               <View style={styles.documentAction}>
                 <SecondaryButton
-                  title={downloadingLoanId === plan.loan.id ? "Descargando..." : "Descargar tabla PDF"}
+                  title={downloadingLoanId === plan.loan.id ? "Descargando..." : "Descargar tabla"}
                   onPress={() => void downloadPlan(plan)}
                 />
               </View>
@@ -228,6 +248,11 @@ const styles = StyleSheet.create({
   due: {
     color: colors.warn,
     fontWeight: "900"
+  },
+  infoRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs
   },
   late: {
     color: colors.danger,

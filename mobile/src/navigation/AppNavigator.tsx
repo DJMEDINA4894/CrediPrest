@@ -75,7 +75,7 @@ export function AppNavigator() {
             <Stack.Screen name="Loans" component={LoansScreen} options={{ title: "Prestamos" }} />
             <Stack.Screen name="LoanForm" component={LoanFormScreen} options={({ route }) => ({ title: route.params?.loan ? "Editar prestamo" : "Nuevo prestamo" })} />
             <Stack.Screen name="LoanDetail" component={LoanDetailScreen} options={{ title: "Detalle prestamo" }} />
-            <Stack.Screen name="LoanRecalculation" component={LoanRecalculationScreen} options={{ title: "Abono extraordinario" }} />
+            <Stack.Screen name="LoanRecalculation" component={LoanRecalculationScreen} options={{ title: "Abono o liquidación" }} />
             <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Pagos" }} />
             {user.role === "Admin" ? (
               <>
