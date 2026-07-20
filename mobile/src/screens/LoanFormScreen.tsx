@@ -148,7 +148,12 @@ export function LoanFormScreen({ route, navigation }: Props) {
             keyboardType="decimal-pad"
             suffix="%"
           />
-          <Text style={styles.hint}>El plazo se calcula por frecuencia: semanal cada 7 dias, quincenal cada 15 dias y mensual cada mes.</Text>
+          <Text style={styles.hint}>
+            {loan
+              ? `Este préstamo conserva el método ${loan.amortizationMethod === 2 ? "de cuota nivelada sobre saldo" : "de interés plano"}. `
+              : "Los préstamos nuevos usan cuota nivelada y calculan el interés sobre el capital pendiente. "}
+            El plazo se calcula por frecuencia: semanal cada 7 dias, quincenal cada 15 dias y mensual cada mes.
+          </Text>
           <PrimaryButton title={loan ? "Guardar cambios" : "Crear y generar cuotas"} onPress={() => void save()} loading={saving} disabled={!loan && clients.length === 0} />
         </Card>
       </ScrollView>

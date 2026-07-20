@@ -192,7 +192,10 @@ function loanPendingBreakdown(loan: Loan) {
 }
 
 function monthlyInterestText(loan: Loan) {
-  return `La tasa de ${loan.monthlyInterestRate}% es mensual. La frecuencia ${frequencyLabels[loan.paymentFrequency].toLowerCase()} indica cada cuánto vence una cuota; la tasa informada siempre corresponde a un mes.`;
+  const calculation = loan.amortizationMethod === 2
+    ? "Este préstamo usa cuota nivelada: el interés de cada cuota se calcula sobre el capital pendiente, por eso el interés disminuye y el abono a capital aumenta con el tiempo."
+    : "Este préstamo existente conserva el método de interés plano: el interés total se calculó sobre el monto original y se repartió entre sus cuotas.";
+  return `La tasa de ${loan.monthlyInterestRate}% es mensual. La frecuencia ${frequencyLabels[loan.paymentFrequency].toLowerCase()} indica cada cuánto vence una cuota. ${calculation}`;
 }
 
 function installmentPaidBreakdown(installment: Installment) {
@@ -1962,7 +1965,12 @@ function LoansView(props: {
               </span>
             </label>
             <div className="loan-submit-row span-3">
-              <p className="form-hint loan-term-hint">El plazo se calcula por frecuencia: semanal crea pagos cada 7 días, quincenal cada 15 días y mensual cada mes.</p>
+              <p className="form-hint loan-term-hint">
+                {props.editingLoan
+                  ? `Este préstamo conserva el método ${props.editingLoan.amortizationMethod === 2 ? "de cuota nivelada sobre saldo" : "de interés plano"}. `
+                  : "Los préstamos nuevos usan cuota nivelada y calculan el interés sobre el capital pendiente. "}
+                El plazo se calcula por frecuencia: semanal crea pagos cada 7 días, quincenal cada 15 días y mensual cada mes.
+              </p>
               <div className="form-actions">
                 {props.editingLoan && <button type="button" className="ghost" onClick={() => props.startNewLoan(props.editingLoan?.clientId)}>Cancelar edición</button>}
                 <button type="submit" disabled={props.isSaving}>{props.isSaving ? "Guardando..." : props.editingLoan ? "Guardar cambios" : "Crear y generar cuotas"}</button>

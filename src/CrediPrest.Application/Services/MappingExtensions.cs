@@ -136,6 +136,7 @@ internal static class MappingExtensions
             loan.PrincipalAmount,
             loan.Currency,
             loan.MonthlyInterestRate,
+            loan.AmortizationMethod,
             loan.TermMonths,
             loan.PaymentFrequency,
             loan.StartDate,

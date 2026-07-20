@@ -51,6 +51,7 @@ export interface Loan {
   principalAmount: number;
   currency: CurrencyType;
   monthlyInterestRate: number;
+  amortizationMethod: number;
   termMonths: number;
   paymentFrequency: PaymentFrequency;
   startDate: string;

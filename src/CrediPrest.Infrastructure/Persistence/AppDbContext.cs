@@ -87,6 +87,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(loan => loan.ReferenceName).HasMaxLength(120);
             entity.Property(loan => loan.PrincipalAmount).HasPrecision(18, 2);
             entity.Property(loan => loan.MonthlyInterestRate).HasPrecision(9, 4);
+            entity.Property(loan => loan.AmortizationMethod).HasDefaultValue(AmortizationMethod.FlatInterest);
             entity.Property(loan => loan.TotalInterest).HasPrecision(18, 2);
             entity.Property(loan => loan.TotalToPay).HasPrecision(18, 2);
             entity.Property(loan => loan.Notes).HasMaxLength(1200);

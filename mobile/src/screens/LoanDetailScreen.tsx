@@ -111,6 +111,9 @@ export function LoanDetailScreen({ route, navigation }: Props) {
           <>
             <Card title={detail.loan.clientName}>
               {detail.loan.referenceName ? <Text style={styles.muted}>Referencia: {detail.loan.referenceName}</Text> : null}
+              <Text style={styles.muted}>
+                Interés: {detail.loan.monthlyInterestRate}% mensual · {detail.loan.amortizationMethod === 2 ? "Cuota sobre saldo" : "Interés plano"}
+              </Text>
               <Text style={styles.total}>Total: {money(detail.loan.totalToPay, currency)}</Text>
               <View style={styles.dueRow}>
                 <Text style={styles.paid}>Pagado: {money(detail.loan.totalPaid, currency)}</Text>
