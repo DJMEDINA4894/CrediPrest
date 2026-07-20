@@ -1,10 +1,11 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
 import { api } from "../api/client";
 import { DateField } from "../components/DateField";
-import { Card, EmptyState, ErrorText, Field, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
+import { Card, EmptyState, ErrorText, Field, GhostButton, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail, LoanRecalculationPreview } from "../types/models";
@@ -22,8 +23,8 @@ const paymentMethods = [
   { value: "1", label: "Efectivo" },
   { value: "2", label: "Transferencia" },
   { value: "3", label: "Depósito" },
-  { value: "4", label: "Otro" },
-  { value: "5", label: "Kash" }
+  { value: "5", label: "Kash" },
+  { value: "4", label: "Otro" }
 ];
 
 export function LoanRecalculationScreen({ route, navigation }: Props) {
@@ -34,6 +35,7 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
   const [newInstallmentCount, setNewInstallmentCount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("1");
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [receipt, setReceipt] = useState<{ base64: string; fileName: string; contentType: string; uri: string } | null>(null);
   const [notes, setNotes] = useState("");
   const [preview, setPreview] = useState<LoanRecalculationPreview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,6 +105,12 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
   }
 
   async function applyExtraordinaryPayment() {
+    const needsReceipt = paymentMethod === "2" || paymentMethod === "3" || paymentMethod === "5";
+    if (needsReceipt && !referenceNumber.trim()) {
+      setError("Ingresa la referencia de la transferencia, depósito o pago por Kash.");
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -110,7 +118,12 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
         ...requestPayload(),
         paymentMethod: Number(paymentMethod),
         referenceNumber: referenceNumber.trim() || null,
-        notes: notes.trim() || null
+        notes: notes.trim() || null,
+        ...(needsReceipt ? {
+          receiptImageBase64: receipt?.base64,
+          receiptFileName: receipt?.fileName,
+          receiptContentType: receipt?.contentType
+        } : {})
       });
       Alert.alert(
         mode === "4" ? "Préstamo liquidado" : "Abono registrado",
@@ -126,7 +139,52 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
     }
   }
 
+  async function chooseReceipt(source: "library" | "camera") {
+    try {
+      const permission = source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setError("Necesitas permitir el acceso para adjuntar el comprobante.");
+        return;
+      }
+
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, base64: true, quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, base64: true, quality: 0.7 });
+      if (result.canceled || !result.assets[0]?.base64) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const base64 = asset.base64;
+      if (!base64) {
+        return;
+      }
+      const contentType = asset.mimeType ?? "image/jpeg";
+      if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+        setError("El comprobante debe ser una imagen JPG, PNG o WEBP.");
+        return;
+      }
+      if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+        setError("El comprobante no puede superar 5 MB.");
+        return;
+      }
+
+      setReceipt({
+        base64,
+        fileName: asset.fileName ?? `comprobante-${Date.now()}.jpg`,
+        contentType,
+        uri: asset.uri
+      });
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo adjuntar el comprobante.");
+    }
+  }
+
   const currency = detail ? currencyLabels[detail.loan.currency] : "C$";
+  const needsReceipt = paymentMethod === "2" || paymentMethod === "3" || paymentMethod === "5";
 
   return (
     <Screen>
@@ -194,13 +252,43 @@ export function LoanRecalculationScreen({ route, navigation }: Props) {
                 }}
                 maximumDate={dateInputValue()}
               />
-              <SelectField label="Método de pago" value={paymentMethod} options={paymentMethods} onChange={setPaymentMethod} />
+              <SelectField
+                label="Método de pago"
+                value={paymentMethod}
+                options={paymentMethods}
+                onChange={(value) => {
+                  setPaymentMethod(value);
+                  if (value !== "2" && value !== "3" && value !== "5") {
+                    setReceipt(null);
+                  }
+                  setError("");
+                }}
+              />
               <Field
                 label="Referencia"
                 value={referenceNumber}
                 onChangeText={setReferenceNumber}
                 placeholder={paymentMethod === "2" || paymentMethod === "3" || paymentMethod === "5" ? "Obligatoria" : "Opcional"}
               />
+              {needsReceipt ? (
+                <View style={styles.receiptSection}>
+                  <Text style={styles.receiptLabel}>{paymentMethod === "5" ? "Comprobante de Kash" : "Imagen del comprobante"}</Text>
+                  <Text style={styles.receiptHint}>Opcional. JPG, PNG o WEBP de hasta 5 MB.</Text>
+                  <View style={styles.receiptActions}>
+                    <GhostButton title="Elegir imagen" onPress={() => void chooseReceipt("library")} />
+                    <GhostButton title="Tomar foto" onPress={() => void chooseReceipt("camera")} />
+                  </View>
+                  {receipt ? (
+                    <View style={styles.receiptPreview}>
+                      <Image source={{ uri: receipt.uri }} style={styles.receiptImage} />
+                      <View style={styles.receiptInfo}>
+                        <Text numberOfLines={1} style={styles.receiptName}>{receipt.fileName}</Text>
+                        <GhostButton title="Quitar" onPress={() => setReceipt(null)} />
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
               <Field label="Observaciones" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
               <Text style={styles.rule}>
                 {mode === "4"
@@ -281,6 +369,48 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: spacing.md,
     padding: spacing.sm
+  },
+  receiptSection: {
+    marginBottom: spacing.md
+  },
+  receiptLabel: {
+    color: colors.text,
+    fontWeight: "800",
+    marginBottom: spacing.xs
+  },
+  receiptHint: {
+    color: colors.muted,
+    fontSize: 12,
+    marginBottom: spacing.sm
+  },
+  receiptActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginBottom: spacing.sm
+  },
+  receiptPreview: {
+    alignItems: "center",
+    backgroundColor: colors.soft,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.sm
+  },
+  receiptImage: {
+    borderRadius: 6,
+    height: 72,
+    width: 72
+  },
+  receiptInfo: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  receiptName: {
+    color: colors.text,
+    fontWeight: "700"
   },
   previewRow: {
     alignItems: "center",

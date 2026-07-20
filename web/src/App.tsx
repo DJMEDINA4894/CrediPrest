@@ -28,7 +28,7 @@ const paymentPreferenceLabels: Record<string, string> = {
 const longDateFormatter = new Intl.DateTimeFormat("es-NI", { day: "numeric", month: "long", year: "numeric" });
 const identificationPattern = "\\d{3}-?\\d{6}-?\\d{4}[A-Za-z]";
 const phonePattern = "\\+?[0-9 ()-]{8,20}";
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = 30 * 60 * 1000;
 const bankAccountPattern = "[0-9]{6,24}";
 const kashPattern = "[A-Za-z0-9@._+\\- ]{3,80}";
 const clientFieldLabels: Record<string, string> = {
@@ -2146,8 +2146,8 @@ function PaymentsView(props: {
               <option value="1">Efectivo</option>
               <option value="2">Transferencia</option>
               <option value="3">Depósito</option>
-              <option value="4">Otro</option>
               <option value="5">Kash</option>
+              <option value="4">Otro</option>
             </select>
           </label>
           <label className="field-label">
@@ -2618,11 +2618,13 @@ function LoanRecalculationDialog({
   const [newInstallmentCount, setNewInstallmentCount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(1);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
   const [preview, setPreview] = useState<LoanRecalculationPreview | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const currency = currencyLabels[detail.loan.currency];
+  const needsReceipt = paymentMethod === 2 || paymentMethod === 3 || paymentMethod === 5;
   const previewPayload = {
     mode,
     effectiveDate,
@@ -2673,11 +2675,13 @@ function LoanRecalculationDialog({
     try {
       setLoading(true);
       setError("");
+      const receipt = needsReceipt ? await paymentReceiptPayload(receiptFile) : {};
       const updatedDetail = await api.registerExtraordinaryPayment(detail.loan.id, {
         ...previewPayload,
         paymentMethod,
         referenceNumber: referenceNumber.trim() || null,
-        notes: notes.trim() || null
+        notes: notes.trim() || null,
+        ...receipt
       });
       await onApplied(updatedDetail);
     } catch (err) {
@@ -2747,14 +2751,18 @@ function LoanRecalculationDialog({
           <label className="field-label">
             Método de pago
             <select value={paymentMethod} onChange={(event) => {
-              setPaymentMethod(Number(event.target.value));
+              const nextPaymentMethod = Number(event.target.value);
+              setPaymentMethod(nextPaymentMethod);
+              if (nextPaymentMethod !== 2 && nextPaymentMethod !== 3 && nextPaymentMethod !== 5) {
+                setReceiptFile(null);
+              }
               setError("");
             }}>
               <option value={1}>Efectivo</option>
               <option value={2}>Transferencia</option>
               <option value={3}>Depósito</option>
-              <option value={4}>Otro</option>
               <option value={5}>Kash</option>
+              <option value={4}>Otro</option>
             </select>
           </label>
           <label className="field-label span-2">
@@ -2819,7 +2827,21 @@ function LoanRecalculationDialog({
               />
             </label>
           )}
-          <label className={`field-label ${mode === 3 ? "span-2" : "span-3"}`}>
+          {needsReceipt && (
+            <label className={`field-label ${mode === 3 ? "span-2" : "span-3"}`}>
+              {paymentMethod === 5 ? "Comprobante de Kash" : "Imagen del comprobante"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => {
+                  setReceiptFile(event.target.files?.[0] ?? null);
+                  setError("");
+                }}
+              />
+              <small className="form-hint">Opcional. JPG, PNG o WEBP de hasta 5 MB.</small>
+            </label>
+          )}
+          <label className={`field-label ${mode === 3 && !needsReceipt ? "span-2" : "span-3"}`}>
             Observaciones
             <textarea value={notes} onChange={(event) => {
               setNotes(event.target.value);

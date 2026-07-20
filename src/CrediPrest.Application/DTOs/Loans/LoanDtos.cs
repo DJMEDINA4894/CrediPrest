@@ -106,7 +106,10 @@ public sealed record RegisterExtraordinaryPaymentRequest(
     int? NewInstallmentCount,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,
-    string? Notes);
+    string? Notes,
+    string? ReceiptImageBase64,
+    string? ReceiptFileName,
+    string? ReceiptContentType);
 
 public sealed record LoanRecalculationPreviewDto(
     Guid LoanId,
