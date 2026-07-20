@@ -242,8 +242,8 @@ export function PaymentsScreen({ route, navigation }: Props) {
               [1, "Efectivo"],
               [2, "Transferencia"],
               [3, "Deposito"],
-              [4, "Otro"],
-              [5, "Kash"]
+              [5, "Kash"],
+              [4, "Otro"]
             ].map(([value, label]) => (
               <Pressable
                 key={String(value)}

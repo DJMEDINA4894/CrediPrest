@@ -8,7 +8,7 @@ import type { LoginResponse } from "../types/models";
 const TOKEN_KEY = "crediprest.mobile.token";
 const USER_KEY = "crediprest.mobile.user";
 const SESSION_STARTED_AT_KEY = "crediprest.mobile.session.startedAt";
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = 30 * 60 * 1000;
 
 type AuthContextValue = {
   user: LoginResponse | null;

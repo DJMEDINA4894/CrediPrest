@@ -224,10 +224,19 @@ internal sealed class LoanService(
                 request.EffectiveDate,
                 request.Amount,
                 request.NewInstallmentCount);
+            var receipt = PaymentReceiptFactory.Create(
+                request.ReceiptImageBase64,
+                request.ReceiptFileName,
+                request.ReceiptContentType);
+            if (receipt is not null)
+            {
+                dbContext.PaymentReceipts.Add(receipt);
+            }
+
             if (request.Mode == LoanRecalculationMode.Payoff)
             {
                 ValidateSettlementAmount(request.Amount, plan.Preview.TotalSettlementAmount);
-                await ApplyLoanPayoffAsync(loan, plan, request, cancellationToken);
+                await ApplyLoanPayoffAsync(loan, plan, request, receipt?.Id, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 if (transaction is not null)
                 {
@@ -262,6 +271,7 @@ internal sealed class LoanService(
                 PaymentMethod = request.PaymentMethod,
                 ReferenceNumber = NormalizeOptional(request.ReferenceNumber),
                 Notes = NormalizeOptional(request.Notes),
+                ReceiptId = receipt?.Id,
                 RecalculationMode = request.Mode,
                 PreviousOutstandingPrincipal = plan.Preview.OutstandingPrincipal,
                 NewOutstandingPrincipal = plan.Preview.PrincipalAfterPayment,
@@ -855,6 +865,7 @@ internal sealed class LoanService(
         Loan loan,
         LoanRecalculationPlan plan,
         RegisterExtraordinaryPaymentRequest request,
+        Guid? receiptId,
         CancellationToken cancellationToken)
     {
         var allocations = plan.PayoffAllocations
@@ -909,6 +920,7 @@ internal sealed class LoanService(
             PaymentMethod = request.PaymentMethod,
             ReferenceNumber = NormalizeOptional(request.ReferenceNumber),
             Notes = userNotes is null ? systemNotes : $"{systemNotes} {userNotes}",
+            ReceiptId = receiptId,
             RecalculationMode = LoanRecalculationMode.Payoff,
             PreviousOutstandingPrincipal = preview.OutstandingPrincipal,
             NewOutstandingPrincipal = 0,
