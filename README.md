@@ -79,6 +79,7 @@ Frontend: `http://127.0.0.1:5173`
 
 - Android con Expo/FCM: `mobile/PUSH_NOTIFICATIONS.md`
 - Navegadores con Web Push/VAPID: `web/PUSH_NOTIFICATIONS.md`
+- Correo para web y movil con Azure Communication Services: `EMAIL_NOTIFICATIONS.md`
 
 ## Funcionalidad inicial
 

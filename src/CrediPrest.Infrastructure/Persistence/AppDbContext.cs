@@ -19,6 +19,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ExpoPushDelivery> ExpoPushDeliveries => Set<ExpoPushDelivery>();
     public DbSet<WebPushDevice> WebPushDevices => Set<WebPushDevice>();
     public DbSet<WebPushDelivery> WebPushDeliveries => Set<WebPushDelivery>();
+    public DbSet<EmailDispatchState> EmailDispatchStates => Set<EmailDispatchState>();
+    public DbSet<EmailNotificationDelivery> EmailNotificationDeliveries => Set<EmailNotificationDelivery>();
     public DbSet<LoanStatusCatalog> LoanStatuses => Set<LoanStatusCatalog>();
     public DbSet<PaymentMethodCatalog> PaymentMethods => Set<PaymentMethodCatalog>();
 
@@ -258,6 +260,32 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 delivery.WebPushDeviceId,
                 delivery.NotificationVersion
             }).IsUnique();
+            entity.Property(delivery => delivery.ErrorCode).HasMaxLength(80);
+            entity.Property(delivery => delivery.ErrorMessage).HasMaxLength(600);
+        });
+
+        modelBuilder.Entity<EmailDispatchState>(entity =>
+        {
+            entity.ToTable("EmailDispatchState");
+            entity.HasKey(state => state.Id);
+            entity.Property(state => state.Id).ValueGeneratedNever();
+            entity.ToTable(table => table.HasCheckConstraint("CK_EmailDispatchState_Singleton", "[Id] = 1"));
+        });
+
+        modelBuilder.Entity<EmailNotificationDelivery>(entity =>
+        {
+            entity.ToTable("EmailNotificationDeliveries");
+            entity.HasKey(delivery => delivery.Id);
+            entity.HasIndex(delivery => new
+            {
+                delivery.NotificationId,
+                delivery.NotificationVersion,
+                delivery.RecipientEmail
+            }).IsUnique();
+            entity.Property(delivery => delivery.RecipientEmail).HasMaxLength(160).IsRequired();
+            entity.Property(delivery => delivery.RecipientName).HasMaxLength(180).IsRequired();
+            entity.Property(delivery => delivery.Status).HasDefaultValue(EmailDeliveryStatus.Pending);
+            entity.Property(delivery => delivery.ProviderMessageId).HasMaxLength(200);
             entity.Property(delivery => delivery.ErrorCode).HasMaxLength(80);
             entity.Property(delivery => delivery.ErrorMessage).HasMaxLength(600);
         });
