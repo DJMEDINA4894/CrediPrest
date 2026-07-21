@@ -6,6 +6,14 @@
       "/*.{css,scss,js,png,gif,ico,jpg,svg}"
     ]
   },
+  "routes": [
+    {
+      "route": "/push-service-worker.js",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      }
+    }
+  ],
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY"

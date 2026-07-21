@@ -75,6 +75,11 @@ pnpm run dev
 
 Frontend: `http://127.0.0.1:5173`
 
+## Notificaciones push
+
+- Android con Expo/FCM: `mobile/PUSH_NOTIFICATIONS.md`
+- Navegadores con Web Push/VAPID: `web/PUSH_NOTIFICATIONS.md`
+
 ## Funcionalidad inicial
 
 - Login privado con JWT.

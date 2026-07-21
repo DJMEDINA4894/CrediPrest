@@ -41,8 +41,10 @@ builder.Services.AddHttpClient<IExpoPushNotificationService, ExpoPushNotificatio
     client.BaseAddress = new Uri("https://exp.host/");
     client.Timeout = TimeSpan.FromSeconds(20);
 });
+builder.Services.AddScoped<IWebPushNotificationService, WebPushNotificationService>();
 builder.Services.AddHostedService<AutomaticMaintenanceService>();
 builder.Services.AddHostedService<ExpoPushDispatchHostedService>();
+builder.Services.AddHostedService<WebPushDispatchHostedService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

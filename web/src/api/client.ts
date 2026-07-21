@@ -105,6 +105,16 @@ export const api = {
   dashboard: () => request<Dashboard>("/dashboard"),
   notifications: () => request<Notification[]>("/notifications"),
   markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
+  webPushPublicKey: () => request<{ publicKey: string }>("/notifications/web-push/public-key"),
+  registerWebPushDevice: (payload: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+    userAgent?: string;
+  }) => request<void>("/notifications/web-push/devices", { method: "POST", body: JSON.stringify(payload) }),
+  unregisterWebPushDevice: (endpoint: string) => request<void>("/notifications/web-push/devices/unregister", {
+    method: "POST",
+    body: JSON.stringify({ endpoint })
+  }),
   clientPaymentPlans: () => request<LoanDetail[]>("/client-portal/payment-plans"),
   users: () => request<AppUser[]>("/users"),
   createUser: (payload: unknown) => request<AppUser>("/users", { method: "POST", body: JSON.stringify(payload) }),

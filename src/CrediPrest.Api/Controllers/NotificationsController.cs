@@ -11,7 +11,8 @@ namespace CrediPrest.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class NotificationsController(
     INotificationService notificationService,
-    IExpoPushNotificationService expoPushNotificationService) : ControllerBase
+    IExpoPushNotificationService expoPushNotificationService,
+    IWebPushNotificationService webPushNotificationService) : ControllerBase
 {
     [HttpGet]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -56,6 +57,44 @@ public sealed class NotificationsController(
         return NoContent();
     }
 
+    [HttpGet("web-push/public-key")]
+    public IActionResult GetWebPushPublicKey()
+        => webPushNotificationService.IsConfigured
+            ? Ok(new { publicKey = webPushNotificationService.PublicKey })
+            : Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Web Push no está configurado en el servidor.",
+                detail: "Configura las claves VAPID en Azure App Service.");
+
+    [HttpPost("web-push/devices")]
+    public async Task<IActionResult> RegisterWebPushDevice(
+        RegisterWebPushDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
+        await webPushNotificationService.RegisterDeviceAsync(
+            GetCurrentUserId(),
+            GetCurrentClientId(),
+            request.Endpoint,
+            request.Keys.P256dh,
+            request.Keys.Auth,
+            request.UserAgent,
+            cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("web-push/devices/unregister")]
+    public async Task<IActionResult> UnregisterWebPushDevice(
+        UnregisterWebPushDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
+        await webPushNotificationService.UnregisterDeviceAsync(
+            GetCurrentUserId(),
+            GetCurrentClientId(),
+            request.Endpoint,
+            cancellationToken);
+        return NoContent();
+    }
+
     private Guid GetCurrentUserId()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -73,3 +112,6 @@ public sealed class NotificationsController(
 
 public sealed record RegisterExpoPushDeviceRequest(string ExpoPushToken, string Platform, string? DeviceName);
 public sealed record UnregisterExpoPushDeviceRequest(string ExpoPushToken);
+public sealed record RegisterWebPushDeviceRequest(string Endpoint, WebPushKeysRequest Keys, string? UserAgent);
+public sealed record WebPushKeysRequest(string P256dh, string Auth);
+public sealed record UnregisterWebPushDeviceRequest(string Endpoint);
