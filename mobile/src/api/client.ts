@@ -75,6 +75,13 @@ export const api = {
     }
   }),
   markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
+  registerPushDevice: (payload: { expoPushToken: string; platform: string; deviceName?: string }) =>
+    request<void>("/notifications/push-devices", { method: "POST", body: JSON.stringify(payload) }),
+  unregisterPushDevice: (expoPushToken: string) =>
+    request<void>("/notifications/push-devices/unregister", {
+      method: "POST",
+      body: JSON.stringify({ expoPushToken })
+    }),
   clientPaymentPlans: () => request<LoanDetail[]>("/client-portal/payment-plans"),
   users: () => request<AppUser[]>("/users"),
   createUser: (payload: unknown) => request<AppUser>("/users", { method: "POST", body: JSON.stringify(payload) }),

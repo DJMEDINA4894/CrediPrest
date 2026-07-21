@@ -170,6 +170,16 @@ export function LoanDetailScreen({ route, navigation }: Props) {
                   </View>
                   <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
                   <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
+                  <View style={styles.installmentBreakdown}>
+                    <View style={styles.installmentBreakdownItem}>
+                      <Text style={styles.installmentBreakdownLabel}>Capital</Text>
+                      <Text style={styles.installmentBreakdownValue}>{money(installment.principalAmount, currency)}</Text>
+                    </View>
+                    <View style={styles.installmentBreakdownItem}>
+                      <Text style={styles.installmentBreakdownLabel}>Interés</Text>
+                      <Text style={styles.installmentBreakdownValue}>{money(installment.interestAmount, currency)}</Text>
+                    </View>
+                  </View>
                   {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
                   <Text style={styles.muted}>Abonado: {money(installment.amountPaid + mora.amountPaid, currency)}</Text>
                   <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
@@ -253,6 +263,30 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     paddingVertical: spacing.sm
+  },
+  installmentBreakdown: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm
+  },
+  installmentBreakdownItem: {
+    backgroundColor: colors.background,
+    borderRadius: 6,
+    flexBasis: "44%",
+    flexGrow: 1,
+    minWidth: 110,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  installmentBreakdownLabel: {
+    color: colors.muted,
+    fontSize: 12
+  },
+  installmentBreakdownValue: {
+    color: colors.text,
+    fontWeight: "800",
+    marginTop: 2
   },
   row: {
     alignItems: "center",

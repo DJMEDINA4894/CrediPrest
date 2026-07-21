@@ -9,7 +9,9 @@ namespace CrediPrest.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public sealed class NotificationsController(INotificationService notificationService) : ControllerBase
+public sealed class NotificationsController(
+    INotificationService notificationService,
+    IExpoPushNotificationService expoPushNotificationService) : ControllerBase
 {
     [HttpGet]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -23,6 +25,34 @@ public sealed class NotificationsController(INotificationService notificationSer
     public async Task<IActionResult> MarkAsRead(Guid id, CancellationToken cancellationToken)
     {
         await notificationService.MarkAsReadAsync(GetCurrentUserId(), GetCurrentClientId(), id, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("push-devices")]
+    public async Task<IActionResult> RegisterPushDevice(
+        RegisterExpoPushDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
+        await expoPushNotificationService.RegisterDeviceAsync(
+            GetCurrentUserId(),
+            GetCurrentClientId(),
+            request.ExpoPushToken,
+            request.Platform,
+            request.DeviceName,
+            cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("push-devices/unregister")]
+    public async Task<IActionResult> UnregisterPushDevice(
+        UnregisterExpoPushDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
+        await expoPushNotificationService.UnregisterDeviceAsync(
+            GetCurrentUserId(),
+            GetCurrentClientId(),
+            request.ExpoPushToken,
+            cancellationToken);
         return NoContent();
     }
 
@@ -40,3 +70,6 @@ public sealed class NotificationsController(INotificationService notificationSer
             ? clientId
             : null;
 }
+
+public sealed record RegisterExpoPushDeviceRequest(string ExpoPushToken, string Platform, string? DeviceName);
+public sealed record UnregisterExpoPushDeviceRequest(string ExpoPushToken);

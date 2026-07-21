@@ -1284,6 +1284,7 @@ internal sealed class LoanService(
                 existing.Message = message;
                 existing.IsRead = false;
                 existing.ReadAtUtc = null;
+                existing.PushVersion++;
                 existing.CreatedAtUtc = DateTime.UtcNow;
                 continue;
             }
@@ -1305,6 +1306,7 @@ internal sealed class LoanService(
             existingClientNotification.Message = clientMessage;
             existingClientNotification.IsRead = false;
             existingClientNotification.ReadAtUtc = null;
+            existingClientNotification.PushVersion++;
             existingClientNotification.CreatedAtUtc = DateTime.UtcNow;
         }
         else

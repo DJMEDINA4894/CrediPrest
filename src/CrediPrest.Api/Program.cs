@@ -36,7 +36,13 @@ builder.Services.AddCors(options =>
 builder.Services
     .AddApplicationServices()
     .AddInfrastructureServices(builder.Configuration);
+builder.Services.AddHttpClient<IExpoPushNotificationService, ExpoPushNotificationService>(client =>
+{
+    client.BaseAddress = new Uri("https://exp.host/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddHostedService<AutomaticMaintenanceService>();
+builder.Services.AddHostedService<ExpoPushDispatchHostedService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

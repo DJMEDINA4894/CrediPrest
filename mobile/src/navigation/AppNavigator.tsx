@@ -1,6 +1,7 @@
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useEffect, useRef } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { ClientPortalScreen } from "../screens/ClientPortalScreen";
@@ -19,6 +20,12 @@ import { ReportsScreen } from "../screens/ReportsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { UserFormScreen } from "../screens/UserFormScreen";
 import { UsersScreen } from "../screens/UsersScreen";
+import {
+  addPushNotificationResponseListener,
+  clearLastPushNotificationResponse,
+  getLastPushNotificationResponse,
+  registerCurrentDeviceForPushNotifications
+} from "../services/pushNotifications";
 import { colors } from "../theme/theme";
 import type { RootStackParamList } from "./types";
 
@@ -26,6 +33,51 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function AppNavigator() {
   const { user, isReady, signOut } = useAuth();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const pendingPushResponse = useRef<Awaited<ReturnType<typeof getLastPushNotificationResponse>>>(null);
+
+  const openPushNotification = useCallback((response: NonNullable<typeof pendingPushResponse.current>) => {
+    if (!user) {
+      pendingPushResponse.current = response;
+      return;
+    }
+
+    if (!navigationRef.isReady()) {
+      pendingPushResponse.current = response;
+      return;
+    }
+
+    const relatedLoanId = response.notification.request.content.data.relatedLoanId;
+    if (user.role === "Client") {
+      navigationRef.navigate("ClientPortal");
+    } else if (typeof relatedLoanId === "string" && relatedLoanId) {
+      navigationRef.navigate("Payments", { loanId: relatedLoanId });
+    } else {
+      navigationRef.navigate("Notifications");
+    }
+
+    pendingPushResponse.current = null;
+    void clearLastPushNotificationResponse();
+  }, [navigationRef, user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    void registerCurrentDeviceForPushNotifications().catch((error) => {
+      console.warn("No se pudo registrar el dispositivo para notificaciones push.", error);
+    });
+
+    const subscription = addPushNotificationResponseListener(openPushNotification);
+    void getLastPushNotificationResponse().then((response) => {
+      if (response) {
+        openPushNotification(response);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [openPushNotification, user]);
 
   if (!isReady) {
     return (
@@ -36,7 +88,14 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        if (pendingPushResponse.current) {
+          openPushNotification(pendingPushResponse.current);
+        }
+      }}
+    >
       <Stack.Navigator
         screenOptions={{
           contentStyle: { backgroundColor: colors.background },
