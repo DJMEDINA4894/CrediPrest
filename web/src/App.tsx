@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api, clearToken, getSessionStartedAt, getToken, setToken } from "./api/client";
+import { disableWebPush, enableWebPush, getWebPushStatus, type WebPushStatus } from "./services/webPush";
 import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification } from "./types/models";
 
 type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "notifications" | "users" | "settings" | "clientPortal";
@@ -702,7 +703,11 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [webPushStatus, setWebPushStatus] = useState<WebPushStatus | "checking">("checking");
+  const [webPushBusy, setWebPushBusy] = useState(false);
+  const [webPushError, setWebPushError] = useState("");
   const refreshInFlight = useRef(false);
+  const pushNavigationHandled = useRef(false);
 
   async function refresh(
     search = clientSearch,
@@ -809,6 +814,62 @@ export default function App() {
     localStorage.setItem(APP_FONT_SIZE_KEY, String(appFontSize));
   }, [appFontSize]);
 
+  useEffect(() => {
+    if (!tokenAvailable) {
+      setWebPushStatus("checking");
+      setWebPushError("");
+      return;
+    }
+
+    let cancelled = false;
+    void getWebPushStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setWebPushStatus(status);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWebPushStatus("disabled");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tokenAvailable]);
+
+  useEffect(() => {
+    if (!tokenAvailable || !session || pushNavigationHandled.current) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const notificationId = params.get("pushNotificationId");
+    const loanId = params.get("pushLoanId");
+    const openNotifications = params.get("pushNotifications") === "1";
+    if (!notificationId && !loanId && !openNotifications) {
+      return;
+    }
+
+    pushNavigationHandled.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    if (notificationId) {
+      void api.markNotificationRead(notificationId)
+        .then(() => setNotifications((items) => items.map((item) => item.id === notificationId ? { ...item, isRead: true } : item)))
+        .catch(() => undefined);
+    }
+
+    if (!loanId) {
+      setView("notifications");
+    } else if (session.role === "Client") {
+      setClientPlanFocusId(loanId);
+      setView("clientPortal");
+    } else {
+      void openLoan(loanId, "payments");
+    }
+  }, [tokenAvailable, session]);
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -853,6 +914,33 @@ export default function App() {
     setNewLoanClientId("");
     setClientSearch("");
     setView("dashboard");
+  }
+
+  async function activateWebPush() {
+    try {
+      setWebPushBusy(true);
+      setWebPushError("");
+      await enableWebPush();
+      setWebPushStatus("enabled");
+    } catch (err) {
+      setWebPushStatus(await getWebPushStatus().catch(() => "disabled"));
+      setWebPushError(err instanceof Error ? err.message : "No se pudieron activar las notificaciones del navegador.");
+    } finally {
+      setWebPushBusy(false);
+    }
+  }
+
+  async function deactivateWebPush() {
+    try {
+      setWebPushBusy(true);
+      setWebPushError("");
+      await disableWebPush();
+      setWebPushStatus("disabled");
+    } catch (err) {
+      setWebPushError(err instanceof Error ? err.message : "No se pudieron desactivar las notificaciones del navegador.");
+    } finally {
+      setWebPushBusy(false);
+    }
   }
 
   function startEditingClient(client: Client | null) {
@@ -1453,6 +1541,11 @@ export default function App() {
             notifications={notifications}
             openNotification={openNotification}
             actionLabel={session?.role === "Client" ? "Ver plan" : "Ver en Pagos"}
+            webPushStatus={webPushStatus}
+            webPushBusy={webPushBusy}
+            webPushError={webPushError}
+            activateWebPush={activateWebPush}
+            deactivateWebPush={deactivateWebPush}
           />
         )}
         {view === "clients" && (
@@ -1542,12 +1635,45 @@ function viewLabel(view: View) {
 function NotificationsView({
   notifications,
   openNotification,
-  actionLabel
+  actionLabel,
+  webPushStatus,
+  webPushBusy,
+  webPushError,
+  activateWebPush,
+  deactivateWebPush
 }: {
   notifications: Notification[];
   openNotification: (notification: Notification) => void | Promise<void>;
   actionLabel: string;
+  webPushStatus: WebPushStatus | "checking";
+  webPushBusy: boolean;
+  webPushError: string;
+  activateWebPush: () => void | Promise<void>;
+  deactivateWebPush: () => void | Promise<void>;
 }) {
+  const pushCopy = {
+    checking: {
+      title: "Comprobando notificaciones",
+      description: "Estamos revisando la configuración de este navegador."
+    },
+    enabled: {
+      title: "Avisos del navegador activos",
+      description: "Recibirás vencimientos, atrasos y moras aunque CrediPrest no esté abierta."
+    },
+    disabled: {
+      title: "Activa los avisos en este navegador",
+      description: "CrediPrest podrá avisarte cuando una cuota venza, se atrase o genere mora."
+    },
+    blocked: {
+      title: "Notificaciones bloqueadas",
+      description: "Habilítalas desde el candado de la barra de direcciones y vuelve a cargar la página."
+    },
+    unsupported: {
+      title: "Notificaciones no disponibles",
+      description: "Este navegador no admite Web Push o la página no se está abriendo mediante HTTPS."
+    }
+  }[webPushStatus];
+
   return (
     <section className="stack">
       <Panel
@@ -1558,6 +1684,24 @@ function NotificationsView({
           </span>
         )}
       >
+        <div className={`web-push-control ${webPushStatus}`}>
+          <span className="web-push-control-icon" aria-hidden="true"><BellIcon /></span>
+          <div className="web-push-control-copy">
+            <strong>{pushCopy.title}</strong>
+            <p>{pushCopy.description}</p>
+            {webPushError && <span className="web-push-error" role="alert">{webPushError}</span>}
+          </div>
+          {webPushStatus === "disabled" && (
+            <button type="button" onClick={() => void activateWebPush()} disabled={webPushBusy}>
+              {webPushBusy ? "Activando..." : "Activar notificaciones"}
+            </button>
+          )}
+          {webPushStatus === "enabled" && (
+            <button type="button" className="ghost" onClick={() => void deactivateWebPush()} disabled={webPushBusy}>
+              {webPushBusy ? "Desactivando..." : "Desactivar"}
+            </button>
+          )}
+        </div>
         <div className="notification-list notification-list-page">
         {notifications.length === 0 && <p className="notification-empty">No hay notificaciones.</p>}
         {notifications.map((notification) => (

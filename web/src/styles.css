@@ -1216,6 +1216,66 @@ td small {
   visibility: visible;
 }
 
+.web-push-control {
+  align-items: center;
+  background: #eef7f5;
+  border: 1px solid #badbd5;
+  border-radius: 8px;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+}
+
+.web-push-control.blocked {
+  background: #fff7e8;
+  border-color: #f0d39d;
+}
+
+.web-push-control.unsupported {
+  background: #f3f6f8;
+  border-color: #d8e4ea;
+}
+
+.web-push-control-icon {
+  align-items: center;
+  background: #176f64;
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex;
+  height: 2.35rem;
+  justify-content: center;
+  width: 2.35rem;
+}
+
+.web-push-control-icon svg {
+  height: 1.1rem;
+  width: 1.1rem;
+}
+
+.web-push-control-copy {
+  min-width: 0;
+}
+
+.web-push-control-copy strong {
+  color: #102f37;
+  display: block;
+}
+
+.web-push-control-copy p {
+  color: #4d6573;
+  margin: 0.15rem 0 0;
+}
+
+.web-push-error {
+  color: #a22f36;
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-top: 0.35rem;
+}
+
 .notification-list {
   display: grid;
   gap: 0.65rem;
@@ -1459,6 +1519,18 @@ td small {
 
   .loans-page .recalculation-form .field-label.span-3 {
     grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .web-push-control {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .web-push-control > button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 

@@ -17,6 +17,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ExpoPushDevice> ExpoPushDevices => Set<ExpoPushDevice>();
     public DbSet<ExpoPushDelivery> ExpoPushDeliveries => Set<ExpoPushDelivery>();
+    public DbSet<WebPushDevice> WebPushDevices => Set<WebPushDevice>();
+    public DbSet<WebPushDelivery> WebPushDeliveries => Set<WebPushDelivery>();
     public DbSet<LoanStatusCatalog> LoanStatuses => Set<LoanStatusCatalog>();
     public DbSet<PaymentMethodCatalog> PaymentMethods => Set<PaymentMethodCatalog>();
 
@@ -219,6 +221,43 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 delivery.NotificationVersion
             }).IsUnique();
             entity.Property(delivery => delivery.ExpoTicketId).HasMaxLength(200);
+            entity.Property(delivery => delivery.ErrorCode).HasMaxLength(80);
+            entity.Property(delivery => delivery.ErrorMessage).HasMaxLength(600);
+        });
+
+        modelBuilder.Entity<WebPushDevice>(entity =>
+        {
+            entity.ToTable("WebPushDevices");
+            entity.HasKey(device => device.Id);
+            entity.HasIndex(device => device.EndpointHash).IsUnique();
+            entity.HasOne(device => device.User)
+                .WithMany()
+                .HasForeignKey(device => device.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(device => device.Client)
+                .WithMany()
+                .HasForeignKey(device => device.ClientId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(device => device.EndpointHash).HasMaxLength(64).IsRequired();
+            entity.Property(device => device.Endpoint).HasMaxLength(2048).IsRequired();
+            entity.Property(device => device.P256dh).HasMaxLength(512).IsRequired();
+            entity.Property(device => device.Auth).HasMaxLength(256).IsRequired();
+            entity.Property(device => device.UserAgent).HasMaxLength(300);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_WebPushDevices_Recipient",
+                "([UserId] IS NOT NULL AND [ClientId] IS NULL) OR ([UserId] IS NULL AND [ClientId] IS NOT NULL)"));
+        });
+
+        modelBuilder.Entity<WebPushDelivery>(entity =>
+        {
+            entity.ToTable("WebPushDeliveries");
+            entity.HasKey(delivery => delivery.Id);
+            entity.HasIndex(delivery => new
+            {
+                delivery.NotificationId,
+                delivery.WebPushDeviceId,
+                delivery.NotificationVersion
+            }).IsUnique();
             entity.Property(delivery => delivery.ErrorCode).HasMaxLength(80);
             entity.Property(delivery => delivery.ErrorMessage).HasMaxLength(600);
         });
