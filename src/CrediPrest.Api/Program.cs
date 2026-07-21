@@ -42,9 +42,11 @@ builder.Services.AddHttpClient<IExpoPushNotificationService, ExpoPushNotificatio
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddScoped<IWebPushNotificationService, WebPushNotificationService>();
+builder.Services.AddScoped<IEmailNotificationService, AzureEmailNotificationService>();
 builder.Services.AddHostedService<AutomaticMaintenanceService>();
 builder.Services.AddHostedService<ExpoPushDispatchHostedService>();
 builder.Services.AddHostedService<WebPushDispatchHostedService>();
+builder.Services.AddHostedService<EmailNotificationDispatchHostedService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
