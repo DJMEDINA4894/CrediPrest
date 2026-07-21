@@ -158,10 +158,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .Where(payment => payment.LoanId == loanId)
             .Where(payment => payment.Loan.Client.IsActive);
 
-        if (currentUser.IsLender && currentUser.UserId.HasValue)
-        {
-            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
-        }
+        paymentsQuery = ApplyPaymentOwnershipFilter(paymentsQuery);
 
         var payments = await paymentsQuery
             .OrderByDescending(payment => payment.PaymentDate)
@@ -177,10 +174,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .Include(payment => payment.Loan)
             .Where(payment => payment.ReceiptId == receiptId);
 
-        if (currentUser.IsLender && currentUser.UserId.HasValue)
-        {
-            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
-        }
+        paymentsQuery = ApplyPaymentOwnershipFilter(paymentsQuery);
 
         var hasAccess = await paymentsQuery.AnyAsync(cancellationToken);
         if (!hasAccess)
@@ -395,11 +389,25 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
     private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(loan => loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
+    }
+
+    private IQueryable<Payment> ApplyPaymentOwnershipFilter(IQueryable<Payment> query)
+    {
+        if (currentUser.IsAdmin)
+        {
+            return query;
+        }
+
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 }

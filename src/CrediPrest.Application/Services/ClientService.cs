@@ -71,7 +71,7 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
             FullName = request.FullName.Trim(),
             IdentificationNumber = request.IdentificationNumber.Trim(),
             Phone = request.Phone.Trim(),
-            LenderUserId = currentUser.IsLender ? currentUser.UserId : null,
+            LenderUserId = currentUser.UserId,
             Address = request.Address.Trim(),
             Email = request.Email?.Trim(),
             PersonalReference1 = request.PersonalReference1?.Trim(),
@@ -266,12 +266,14 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
 
     private IQueryable<Domain.Entities.Client> ApplyOwnershipFilter(IQueryable<Domain.Entities.Client> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(client => client.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private static void Validate(CreateClientRequest request)

@@ -22,16 +22,12 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ICurrent
             .Where(loan => loan.Client.IsActive)
             .ToListAsync(cancellationToken);
         var clients = await ApplyClientOwnershipFilter(dbContext.Clients).ToListAsync(cancellationToken);
-        var payments = await dbContext.Payments
+        var payments = await ApplyPaymentOwnershipFilter(dbContext.Payments)
             .Include(payment => payment.Installment)
             .Include(payment => payment.Loan)
             .ThenInclude(loan => loan.Client)
             .Where(payment => payment.Loan.Client.IsActive)
             .ToListAsync(cancellationToken);
-        if (currentUser.IsLender && currentUser.UserId.HasValue)
-        {
-            payments = payments.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value).ToList();
-        }
 
         var todayPayments = payments.Where(payment => payment.PaymentDate.Date == today).ToList();
         var weekPayments = payments.Where(payment => payment.PaymentDate.Date >= today.AddDays(-7) && payment.PaymentDate.Date <= today).ToList();
@@ -85,21 +81,37 @@ internal sealed class DashboardService(IApplicationDbContext dbContext, ICurrent
 
     private IQueryable<Domain.Entities.Loan> ApplyLoanOwnershipFilter(IQueryable<Domain.Entities.Loan> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(loan => loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private IQueryable<Domain.Entities.Client> ApplyClientOwnershipFilter(IQueryable<Domain.Entities.Client> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(client => client.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
+    }
+
+    private IQueryable<Domain.Entities.Payment> ApplyPaymentOwnershipFilter(IQueryable<Domain.Entities.Payment> query)
+    {
+        if (currentUser.IsAdmin)
+        {
+            return query;
+        }
+
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 }

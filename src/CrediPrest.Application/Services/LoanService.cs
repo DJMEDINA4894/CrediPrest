@@ -58,7 +58,7 @@ internal sealed class LoanService(
         var loan = new Loan
         {
             ClientId = request.ClientId,
-            LenderUserId = currentUser.IsLender ? currentUser.UserId : client.LenderUserId,
+            LenderUserId = client.LenderUserId ?? currentUser.UserId,
             PrincipalAmount = request.PrincipalAmount,
             Currency = request.Currency,
             MonthlyInterestRate = request.MonthlyInterestRate,
@@ -597,22 +597,26 @@ internal sealed class LoanService(
 
     private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(loan => loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private IQueryable<Domain.Entities.Client> ApplyClientOwnershipFilter(IQueryable<Domain.Entities.Client> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(client => client.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private static IReadOnlyList<Installment> RecalculateLoan(Loan loan)
