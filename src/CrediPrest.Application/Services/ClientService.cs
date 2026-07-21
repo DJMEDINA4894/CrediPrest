@@ -1,5 +1,7 @@
 using CrediPrest.Application.Abstractions;
 using CrediPrest.Application.DTOs.Clients;
+using CrediPrest.Domain.Entities;
+using CrediPrest.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Mail;
 using System.Text.RegularExpressions;
@@ -86,9 +88,44 @@ internal sealed class ClientService(IApplicationDbContext dbContext, ICurrentUse
         };
 
         dbContext.Clients.Add(client);
+        await AddCreatedNotificationsAsync(client, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return client.ToDto();
+    }
+
+    private async Task AddCreatedNotificationsAsync(Domain.Entities.Client client, CancellationToken cancellationToken)
+    {
+        var title = "Cliente creado";
+        var staffMessage = $"Se registró al cliente {client.FullName} en CrediPrest.";
+        var clientMessage = "Tu información de cliente fue registrada en CrediPrest. Recibirás avisos cuando tengas movimientos o préstamos asociados.";
+        var staffUserIds = await dbContext.Users
+            .Where(user => user.IsActive
+                && (user.Role == UserRole.Admin
+                    || (user.Role == UserRole.Lender && user.Id == client.LenderUserId)))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var userId in staffUserIds)
+        {
+            dbContext.Notifications.Add(new Notification
+            {
+                UserId = userId,
+                Type = NotificationType.ClientCreated,
+                RelatedEntityId = client.Id,
+                Title = title,
+                Message = staffMessage
+            });
+        }
+
+        dbContext.Notifications.Add(new Notification
+        {
+            ClientId = client.Id,
+            Type = NotificationType.ClientCreated,
+            RelatedEntityId = client.Id,
+            Title = title,
+            Message = clientMessage
+        });
     }
 
     public async Task<ClientDto> UpdateAsync(Guid id, UpdateClientRequest request, CancellationToken cancellationToken = default)

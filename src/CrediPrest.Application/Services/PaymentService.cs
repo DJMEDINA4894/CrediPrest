@@ -94,10 +94,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
                 .OrderBy(charge => charge.PeriodNumber)
                 .ToList();
 
+            var registeredPayments = new List<Payment>();
             var remainingPayment = request.AmountPaid;
-            remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request, receipt?.Id);
-            remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request, receipt?.Id);
-            remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request, receipt?.Id);
+            remainingPayment = ApplyToInstallments(loan, overdueInstallments, remainingPayment, request, receipt?.Id, registeredPayments);
+            remainingPayment = ApplyToCharges(loan, pendingCharges, remainingPayment, request, receipt?.Id, registeredPayments);
+            remainingPayment = ApplyToInstallments(loan, currentInstallments, remainingPayment, request, receipt?.Id, registeredPayments);
 
             if (remainingPayment > 0)
             {
@@ -111,6 +112,16 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
                 loan.Status = LoanStatus.Cancelled;
             }
 
+            if (registeredPayments.Count == 0)
+            {
+                throw new InvalidOperationException("No se pudo aplicar el pago al préstamo seleccionado.");
+            }
+
+            await AddPaymentNotificationsAsync(
+                loan,
+                registeredPayments[0].Id,
+                request,
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
             {
@@ -200,7 +211,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         IEnumerable<Installment> installments,
         decimal remainingPayment,
         RegisterPaymentRequest request,
-        Guid? receiptId)
+        Guid? receiptId,
+        ICollection<Payment> registeredPayments)
     {
         foreach (var installment in installments)
         {
@@ -220,7 +232,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             installment.Status = GetInstallmentStatus(installment);
             installment.PaidAtUtc = installment.Status == InstallmentStatus.Paid ? DateTime.UtcNow : null;
 
-            AddPayment(loan.Id, installment.Id, null, appliedAmount, request, receiptId);
+            AddPayment(loan.Id, installment.Id, null, appliedAmount, request, receiptId, registeredPayments);
             remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
         }
 
@@ -232,7 +244,8 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
         IEnumerable<LoanCharge> charges,
         decimal remainingPayment,
         RegisterPaymentRequest request,
-        Guid? receiptId)
+        Guid? receiptId,
+        ICollection<Payment> registeredPayments)
     {
         foreach (var charge in charges)
         {
@@ -249,15 +262,23 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
             var appliedAmount = Math.Round(Math.Min(remainingPayment, pendingChargeAmount), 2);
             charge.AmountPaid = Math.Round(charge.AmountPaid + appliedAmount, 2);
-            AddPayment(loan.Id, null, charge.Id, appliedAmount, request, receiptId);
+            AddPayment(loan.Id, null, charge.Id, appliedAmount, request, receiptId, registeredPayments);
             remainingPayment = Math.Round(remainingPayment - appliedAmount, 2);
         }
 
         return remainingPayment;
     }
 
-    private void AddPayment(Guid loanId, Guid? installmentId, Guid? loanChargeId, decimal amount, RegisterPaymentRequest request, Guid? receiptId)
-        => dbContext.Payments.Add(new Payment
+    private void AddPayment(
+        Guid loanId,
+        Guid? installmentId,
+        Guid? loanChargeId,
+        decimal amount,
+        RegisterPaymentRequest request,
+        Guid? receiptId,
+        ICollection<Payment> registeredPayments)
+    {
+        var payment = new Payment
         {
             LoanId = loanId,
             InstallmentId = installmentId,
@@ -268,7 +289,68 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             ReferenceNumber = request.ReferenceNumber?.Trim(),
             Notes = request.Notes?.Trim(),
             ReceiptId = receiptId
+        };
+        dbContext.Payments.Add(payment);
+        registeredPayments.Add(payment);
+    }
+
+    private async Task AddPaymentNotificationsAsync(
+        Loan loan,
+        Guid relatedPaymentId,
+        RegisterPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var amount = FormatMoney(request.AmountPaid, loan.Currency);
+        var date = request.PaymentDate.ToString("d 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-NI"));
+        var method = FormatPaymentMethod(request.PaymentMethod);
+        var reference = string.IsNullOrWhiteSpace(loan.ReferenceName)
+            ? "el préstamo"
+            : $"el préstamo {loan.ReferenceName.Trim()}";
+        var title = "Pago registrado";
+        var staffMessage = $"Se registró un pago de {amount} de {loan.Client.FullName} para {reference}, con fecha {date}, mediante {method}.";
+        var clientMessage = $"Registramos tu pago de {amount} para {reference}, con fecha {date}, mediante {method}.";
+
+        var staffUserIds = await dbContext.Users
+            .Where(user => user.IsActive
+                && (user.Role == UserRole.Admin
+                    || (user.Role == UserRole.Lender && user.Id == loan.LenderUserId)))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var userId in staffUserIds)
+        {
+            dbContext.Notifications.Add(new Notification
+            {
+                UserId = userId,
+                Type = NotificationType.PaymentReceived,
+                RelatedEntityId = relatedPaymentId,
+                Title = title,
+                Message = staffMessage
+            });
+        }
+
+        dbContext.Notifications.Add(new Notification
+        {
+            ClientId = loan.ClientId,
+            Type = NotificationType.PaymentReceived,
+            RelatedEntityId = relatedPaymentId,
+            Title = title,
+            Message = clientMessage
         });
+    }
+
+    private static string FormatMoney(decimal amount, CurrencyType currency)
+        => $"{(currency == CurrencyType.Usd ? "USD" : "C$")} {amount:N2}";
+
+    private static string FormatPaymentMethod(PaymentMethod method)
+        => method switch
+        {
+            PaymentMethod.Cash => "efectivo",
+            PaymentMethod.Transfer => "transferencia",
+            PaymentMethod.Deposit => "depósito",
+            PaymentMethod.Kash => "Kash",
+            _ => "otro método"
+        };
 
     private static List<Installment> GetInstallmentsInPaymentOrder(IEnumerable<Installment> installments, Guid? selectedInstallmentId)
     {

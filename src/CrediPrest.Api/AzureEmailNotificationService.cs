@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using Azure;
 using Azure.Communication.Email;
+using CrediPrest.Application.Services;
 using CrediPrest.Domain.Entities;
 using CrediPrest.Domain.Enums;
 using CrediPrest.Infrastructure.Persistence;
@@ -17,6 +18,7 @@ public interface IEmailNotificationService
 
 internal sealed class AzureEmailNotificationService(
     AppDbContext dbContext,
+    ILoanService loanService,
     IConfiguration configuration,
     ILogger<AzureEmailNotificationService> logger) : IEmailNotificationService
 {
@@ -78,6 +80,7 @@ internal sealed class AzureEmailNotificationService(
             }
 
             var relatedLoans = await ResolveRelatedLoansAsync(notifications, cancellationToken);
+            var loanAttachmentCache = new Dictionary<Guid, LoanAttachment>();
             var emailClient = new EmailClient(ConnectionString!);
             foreach (var notification in notifications)
             {
@@ -118,6 +121,18 @@ internal sealed class AzureEmailNotificationService(
                 try
                 {
                     var message = new EmailMessage(SenderAddress!, recipientEmail!, content);
+                    if (notification.Type == NotificationType.LoanCreated && relatedLoanId.HasValue)
+                    {
+                        var attachment = await GetLoanAttachmentAsync(
+                            relatedLoanId.Value,
+                            loanAttachmentCache,
+                            cancellationToken);
+                        message.Attachments.Add(new EmailAttachment(
+                            attachment.FileName,
+                            "application/pdf",
+                            BinaryData.FromBytes(attachment.Content)));
+                    }
+
                     var operation = await emailClient.SendAsync(WaitUntil.Started, message, cancellationToken);
                     delivery.Status = EmailDeliveryStatus.Submitted;
                     delivery.ProviderMessageId = operation.Id;
@@ -219,6 +234,15 @@ internal sealed class AzureEmailNotificationService(
             result[charge.Id] = charge.LoanId;
         }
 
+        var paymentLoans = await dbContext.Payments
+            .Where(payment => relatedIds.Contains(payment.Id))
+            .Select(payment => new { payment.Id, payment.LoanId })
+            .ToListAsync(cancellationToken);
+        foreach (var payment in paymentLoans)
+        {
+            result[payment.Id] = payment.LoanId;
+        }
+
         var loanIds = await dbContext.Loans
             .Where(loan => relatedIds.Contains(loan.Id))
             .Select(loan => loan.Id)
@@ -229,6 +253,24 @@ internal sealed class AzureEmailNotificationService(
         }
 
         return result;
+    }
+
+    private async Task<LoanAttachment> GetLoanAttachmentAsync(
+        Guid loanId,
+        IDictionary<Guid, LoanAttachment> cache,
+        CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(loanId, out var cached))
+        {
+            return cached;
+        }
+
+        var detail = await loanService.GetDetailAsync(loanId, cancellationToken);
+        var attachment = new LoanAttachment(
+            LoanPaymentTablePdfBuilder.FileName(detail.Loan),
+            LoanPaymentTablePdfBuilder.Build(detail));
+        cache[loanId] = attachment;
+        return attachment;
     }
 
     private EmailContent BuildContent(Notification notification, string recipientName, string actionUrl)
@@ -308,4 +350,6 @@ internal sealed class AzureEmailNotificationService(
 
     private static string? Clean(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed record LoanAttachment(string FileName, byte[] Content);
 }

@@ -33,6 +33,12 @@ internal sealed class NotificationService(
         var charges = await dbContext.LoanCharges
             .Where(charge => relatedEntityIds.Contains(charge.Id))
             .ToDictionaryAsync(charge => charge.Id, cancellationToken);
+        var payments = await dbContext.Payments
+            .Where(payment => relatedEntityIds.Contains(payment.Id))
+            .ToDictionaryAsync(payment => payment.Id, cancellationToken);
+        var clients = await dbContext.Clients
+            .Where(client => relatedEntityIds.Contains(client.Id))
+            .ToDictionaryAsync(client => client.Id, cancellationToken);
         var relatedLoanIds = (await dbContext.Loans
             .Where(loan => relatedEntityIds.Contains(loan.Id))
             .Select(loan => loan.Id)
@@ -40,8 +46,8 @@ internal sealed class NotificationService(
             .ToHashSet();
 
         return notifications
-            .Where(notification => IsVisibleNotification(notification, installments, charges, relatedLoanIds))
-            .OrderBy(notification => GetRelatedDate(notification, installments, charges, relatedLoanIds))
+            .Where(notification => IsVisibleNotification(notification, installments, charges, payments, clients, relatedLoanIds))
+            .OrderBy(notification => GetRelatedDate(notification, installments, charges, payments, clients, relatedLoanIds))
             .ThenBy(notification => notification.IsRead)
             .ThenByDescending(notification => notification.CreatedAtUtc)
             .Take(50)
@@ -49,6 +55,7 @@ internal sealed class NotificationService(
             {
                 installments.TryGetValue(notification.RelatedEntityId, out var installment);
                 charges.TryGetValue(notification.RelatedEntityId, out var charge);
+                payments.TryGetValue(notification.RelatedEntityId, out var payment);
                 return new NotificationDto(
                     notification.Id,
                     notification.Type,
@@ -57,8 +64,8 @@ internal sealed class NotificationService(
                     notification.IsRead,
                     notification.CreatedAtUtc,
                     notification.RelatedEntityId,
-                    installment?.LoanId ?? charge?.LoanId ?? (relatedLoanIds.Contains(notification.RelatedEntityId) ? notification.RelatedEntityId : null),
-                    installment?.DueDate ?? charge?.PeriodEndDate);
+                    installment?.LoanId ?? charge?.LoanId ?? payment?.LoanId ?? (relatedLoanIds.Contains(notification.RelatedEntityId) ? notification.RelatedEntityId : null),
+                    installment?.DueDate ?? charge?.PeriodEndDate ?? payment?.PaymentDate);
             })
             .ToList();
     }
@@ -417,11 +424,17 @@ internal sealed class NotificationService(
         Notification notification,
         IReadOnlyDictionary<Guid, Installment> installments,
         IReadOnlyDictionary<Guid, LoanCharge> charges,
+        IReadOnlyDictionary<Guid, Payment> payments,
+        IReadOnlyDictionary<Guid, Client> clients,
         IReadOnlySet<Guid> loanIds)
         => installments.TryGetValue(notification.RelatedEntityId, out var installment)
             ? installment.DueDate
             : charges.TryGetValue(notification.RelatedEntityId, out var charge)
                 ? charge.PeriodEndDate
+                : payments.TryGetValue(notification.RelatedEntityId, out var payment)
+                    ? payment.PaymentDate
+                    : clients.TryGetValue(notification.RelatedEntityId, out var client)
+                        ? client.RegisteredAtUtc
                 : loanIds.Contains(notification.RelatedEntityId)
                     ? notification.CreatedAtUtc
                 : DateTime.MaxValue;
@@ -430,6 +443,8 @@ internal sealed class NotificationService(
         Notification notification,
         IReadOnlyDictionary<Guid, Installment> installments,
         IReadOnlyDictionary<Guid, LoanCharge> charges,
+        IReadOnlyDictionary<Guid, Payment> payments,
+        IReadOnlyDictionary<Guid, Client> clients,
         IReadOnlySet<Guid> loanIds)
         => notification.Type switch
         {
@@ -442,6 +457,12 @@ internal sealed class NotificationService(
                 charges.TryGetValue(notification.RelatedEntityId, out var charge)
                 && charge.AmountPaid < charge.Amount,
             NotificationType.LateFeeRateChanged =>
+                loanIds.Contains(notification.RelatedEntityId),
+            NotificationType.PaymentReceived =>
+                payments.ContainsKey(notification.RelatedEntityId),
+            NotificationType.ClientCreated =>
+                clients.TryGetValue(notification.RelatedEntityId, out var client) && client.IsActive,
+            NotificationType.LoanCreated =>
                 loanIds.Contains(notification.RelatedEntityId),
             _ => false
         };

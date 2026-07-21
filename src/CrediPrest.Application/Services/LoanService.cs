@@ -75,10 +75,68 @@ internal sealed class LoanService(
 
         loan.Installments.AddRange(RecalculateLoan(loan));
         dbContext.Loans.Add(loan);
+        await AddLoanCreatedNotificationsAsync(loan, client, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return (await LoadLoanAsync(loan.Id, cancellationToken)).ToDetailDto();
     }
+
+    private async Task AddLoanCreatedNotificationsAsync(
+        Loan loan,
+        Client client,
+        CancellationToken cancellationToken)
+    {
+        var currency = loan.Currency == CurrencyType.Usd ? "USD" : "C$";
+        var frequency = loan.PaymentFrequency switch
+        {
+            PaymentFrequency.Weekly => "semanal",
+            PaymentFrequency.Biweekly => "quincenal",
+            _ => "mensual"
+        };
+        var reference = string.IsNullOrWhiteSpace(loan.ReferenceName)
+            ? "Nuevo préstamo"
+            : loan.ReferenceName;
+        var culture = CultureInfo.GetCultureInfo("es-NI");
+        var startDate = loan.StartDate.ToString("dd/MM/yyyy", culture);
+        var endDate = loan.EndDate.ToString("dd/MM/yyyy", culture);
+        var lateFee = string.IsNullOrWhiteSpace(loan.LateFeeDescription)
+            ? "sin mora configurada"
+            : $"mora {loan.LateFeeDescription}%";
+        var details = $"Capital {currency} {loan.PrincipalAmount:N2}; interés mensual {loan.MonthlyInterestRate:0.##}% sobre saldo; frecuencia {frequency}; {loan.Installments.Count} cuotas; inicio {startDate}; vence {endDate}; interés total {currency} {loan.TotalInterest:N2}; total a pagar {currency} {loan.TotalToPay:N2}; {lateFee}.";
+        var title = "Préstamo creado";
+        var staffMessage = $"Se creó {reference} para {client.FullName}: {details}";
+        var clientMessage = $"Se creó {reference} a tu nombre: {details} La tabla de pagos se adjunta al correo de confirmación.";
+        var staffUserIds = await dbContext.Users
+            .Where(user => user.IsActive
+                && (user.Role == UserRole.Admin
+                    || (user.Role == UserRole.Lender && user.Id == loan.LenderUserId)))
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+
+        foreach (var userId in staffUserIds)
+        {
+            dbContext.Notifications.Add(new Notification
+            {
+                UserId = userId,
+                Type = NotificationType.LoanCreated,
+                RelatedEntityId = loan.Id,
+                Title = title,
+                Message = FitNotificationMessage(staffMessage)
+            });
+        }
+
+        dbContext.Notifications.Add(new Notification
+        {
+            ClientId = client.Id,
+            Type = NotificationType.LoanCreated,
+            RelatedEntityId = loan.Id,
+            Title = title,
+            Message = FitNotificationMessage(clientMessage)
+        });
+    }
+
+    private static string FitNotificationMessage(string value)
+        => value.Length <= 600 ? value : $"{value[..597]}...";
 
     public async Task<LoanDetailDto> UpdateAsync(Guid id, UpdateLoanRequest request, CancellationToken cancellationToken = default)
     {

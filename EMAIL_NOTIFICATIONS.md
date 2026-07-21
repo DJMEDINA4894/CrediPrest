@@ -1,6 +1,6 @@
 # Notificaciones por correo con Azure Communication Services
 
-CrediPrest envia por correo los avisos internos nuevos o actualizados de vencimientos y moras. El canal funciona para usuarios de la web y de la aplicacion movil porque el envio se realiza desde la API.
+CrediPrest envia por correo los avisos internos nuevos o actualizados de clientes, prestamos, pagos, vencimientos y moras. El canal funciona para usuarios de la web y de la aplicacion movil porque el envio se realiza desde la API.
 
 ## 1. Crear los recursos en Azure
 
@@ -42,6 +42,9 @@ La primera ejecucion configurada activa el canal sin enviar avisos historicos. A
 - Los clientes activos lo reciben solamente cuando tienen un correo valido registrado.
 - Cada combinacion de notificacion, version y correo se envia una sola vez.
 - Si cambia el contenido de una mora o aviso, la nueva version puede generar un correo actualizado.
+- Cada pago nuevo genera una sola confirmacion aunque el monto se distribuya entre varias cuotas o moras.
+- Al registrar un cliente se envia una confirmacion al personal y al cliente cuando tiene correo.
+- Al crear un prestamo se envia su resumen financiero y se adjunta la misma tabla de pagos PDF disponible en la web y la aplicacion movil.
 - El boton `Ver en CrediPrest` abre el prestamo relacionado o la pantalla de notificaciones y exige autenticacion.
 - El correo no incluye cedula, cuentas bancarias ni credenciales.
 
