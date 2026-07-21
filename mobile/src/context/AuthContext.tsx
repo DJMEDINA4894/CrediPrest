@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import * as SecureStore from "expo-secure-store";
 import { AppState } from "react-native";
 import { api, setApiToken } from "../api/client";
+import { unregisterCurrentDeviceFromPushNotifications } from "../services/pushNotifications";
 import type { LoginResponse } from "../types/models";
 
 const TOKEN_KEY = "crediprest.mobile.token";
@@ -98,6 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(response);
     },
     async signOut() {
+      try {
+        await unregisterCurrentDeviceFromPushNotifications();
+      } catch {
+        // La sesión debe poder cerrarse aunque el teléfono esté sin conexión.
+      }
       await clearSession();
     }
   }), [clearSession, isReady, user]);

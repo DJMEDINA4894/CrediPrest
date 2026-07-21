@@ -333,6 +333,7 @@ internal sealed class NotificationService(
             {
                 existing.IsRead = false;
                 existing.ReadAtUtc = null;
+                existing.PushVersion++;
                 existing.CreatedAtUtc = DateTime.UtcNow;
             }
             return;
@@ -396,6 +397,7 @@ internal sealed class NotificationService(
             {
                 existing.IsRead = false;
                 existing.ReadAtUtc = null;
+                existing.PushVersion++;
                 existing.CreatedAtUtc = DateTime.UtcNow;
             }
             return;

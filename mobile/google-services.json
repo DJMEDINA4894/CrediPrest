@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "946763666439",
+    "project_id": "crediprest-84c43",
+    "storage_bucket": "crediprest-84c43.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:946763666439:android:c45c01751f5db4f48b06a2",
+        "android_client_info": {
+          "package_name": "com.crediprest.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSsjkpsNvVe09dhUtdUGOnT6K-5KZgKQ4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

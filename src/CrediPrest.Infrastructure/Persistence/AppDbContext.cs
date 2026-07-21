@@ -15,6 +15,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentReceipt> PaymentReceipts => Set<PaymentReceipt>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<ExpoPushDevice> ExpoPushDevices => Set<ExpoPushDevice>();
+    public DbSet<ExpoPushDelivery> ExpoPushDeliveries => Set<ExpoPushDelivery>();
     public DbSet<LoanStatusCatalog> LoanStatuses => Set<LoanStatusCatalog>();
     public DbSet<PaymentMethodCatalog> PaymentMethods => Set<PaymentMethodCatalog>();
 
@@ -182,6 +184,43 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.HasIndex(notification => new { notification.ClientId, notification.Type, notification.RelatedEntityId }).IsUnique();
             entity.Property(notification => notification.Title).HasMaxLength(160).IsRequired();
             entity.Property(notification => notification.Message).HasMaxLength(600).IsRequired();
+            entity.Property(notification => notification.PushVersion).HasDefaultValue(1);
+        });
+
+        modelBuilder.Entity<ExpoPushDevice>(entity =>
+        {
+            entity.ToTable("ExpoPushDevices");
+            entity.HasKey(device => device.Id);
+            entity.HasIndex(device => device.ExpoPushToken).IsUnique();
+            entity.HasOne(device => device.User)
+                .WithMany()
+                .HasForeignKey(device => device.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(device => device.Client)
+                .WithMany()
+                .HasForeignKey(device => device.ClientId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(device => device.ExpoPushToken).HasMaxLength(220).IsRequired();
+            entity.Property(device => device.Platform).HasMaxLength(20).IsRequired();
+            entity.Property(device => device.DeviceName).HasMaxLength(120);
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_ExpoPushDevices_Recipient",
+                "([UserId] IS NOT NULL AND [ClientId] IS NULL) OR ([UserId] IS NULL AND [ClientId] IS NOT NULL)"));
+        });
+
+        modelBuilder.Entity<ExpoPushDelivery>(entity =>
+        {
+            entity.ToTable("ExpoPushDeliveries");
+            entity.HasKey(delivery => delivery.Id);
+            entity.HasIndex(delivery => new
+            {
+                delivery.NotificationId,
+                delivery.ExpoPushDeviceId,
+                delivery.NotificationVersion
+            }).IsUnique();
+            entity.Property(delivery => delivery.ExpoTicketId).HasMaxLength(200);
+            entity.Property(delivery => delivery.ErrorCode).HasMaxLength(80);
+            entity.Property(delivery => delivery.ErrorMessage).HasMaxLength(600);
         });
 
         modelBuilder.Entity<LoanStatusCatalog>(entity =>
