@@ -231,6 +231,10 @@ internal sealed class ExpoPushNotificationService(
             .Where(charge => relatedIds.Contains(charge.Id))
             .Select(charge => new { charge.Id, charge.LoanId })
             .ToDictionaryAsync(item => item.Id, item => item.LoanId, cancellationToken);
+        var paymentLoans = await dbContext.Payments
+            .Where(payment => relatedIds.Contains(payment.Id))
+            .Select(payment => new { payment.Id, payment.LoanId })
+            .ToDictionaryAsync(item => item.Id, item => item.LoanId, cancellationToken);
         var loanIds = (await dbContext.Loans
             .Where(loan => relatedIds.Contains(loan.Id))
             .Select(loan => loan.Id)
@@ -247,6 +251,10 @@ internal sealed class ExpoPushNotificationService(
             else if (chargeLoans.TryGetValue(relatedId, out var chargeLoanId))
             {
                 item.RelatedLoanId = chargeLoanId;
+            }
+            else if (paymentLoans.TryGetValue(relatedId, out var paymentLoanId))
+            {
+                item.RelatedLoanId = paymentLoanId;
             }
             else if (loanIds.Contains(relatedId))
             {
