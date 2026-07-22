@@ -8,7 +8,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanService loanService, ICurrentUserContext currentUser) : IPaymentService
+internal sealed class PaymentService(
+    IApplicationDbContext dbContext,
+    ILoanService loanService,
+    ICurrentUserContext currentUser) : IPaymentService
 {
     public async Task<LoanDetailDto> RegisterAsync(RegisterPaymentRequest request, CancellationToken cancellationToken = default)
     {
@@ -60,6 +63,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
                 && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
             {
                 throw new InvalidOperationException("El préstamo ya está cancelado.");
+            }
+
+            if (request.PaymentCurrency.HasValue && request.PaymentCurrency.Value != loan.Currency)
+            {
+                throw new InvalidOperationException("El pago debe registrarse en la misma moneda del préstamo.");
             }
 
             var receipt = PaymentReceiptFactory.Create(
@@ -158,10 +166,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .Where(payment => payment.LoanId == loanId)
             .Where(payment => payment.Loan.Client.IsActive);
 
-        if (currentUser.IsLender && currentUser.UserId.HasValue)
-        {
-            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
-        }
+        paymentsQuery = ApplyPaymentOwnershipFilter(paymentsQuery);
 
         var payments = await paymentsQuery
             .OrderByDescending(payment => payment.PaymentDate)
@@ -177,10 +182,7 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
             .Include(payment => payment.Loan)
             .Where(payment => payment.ReceiptId == receiptId);
 
-        if (currentUser.IsLender && currentUser.UserId.HasValue)
-        {
-            paymentsQuery = paymentsQuery.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value);
-        }
+        paymentsQuery = ApplyPaymentOwnershipFilter(paymentsQuery);
 
         var hasAccess = await paymentsQuery.AnyAsync(cancellationToken);
         if (!hasAccess)
@@ -395,11 +397,25 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
 
     private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(loan => loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
+    }
+
+    private IQueryable<Payment> ApplyPaymentOwnershipFilter(IQueryable<Payment> query)
+    {
+        if (currentUser.IsAdmin)
+        {
+            return query;
+        }
+
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(payment => payment.Loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 }

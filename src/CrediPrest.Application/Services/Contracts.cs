@@ -1,6 +1,7 @@
 using CrediPrest.Application.DTOs.Auth;
 using CrediPrest.Application.DTOs.Clients;
 using CrediPrest.Application.DTOs.Dashboard;
+using CrediPrest.Application.DTOs.ExchangeRates;
 using CrediPrest.Application.DTOs.Loans;
 using CrediPrest.Application.DTOs.Notifications;
 using CrediPrest.Application.DTOs.Payments;
@@ -42,6 +43,12 @@ public interface IPaymentService
     Task<LoanDetailDto> RegisterAsync(RegisterPaymentRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PaymentDto>> ListByLoanAsync(Guid loanId, CancellationToken cancellationToken = default);
     Task<PaymentReceiptFileDto> GetReceiptAsync(Guid receiptId, CancellationToken cancellationToken = default);
+}
+
+public interface IExchangeRateService
+{
+    Task<ExchangeRateDto> GetAsync(DateTime date, CancellationToken cancellationToken = default);
+    Task<ExchangeRateDto> RefreshAsync(DateTime date, CancellationToken cancellationToken = default);
 }
 
 public interface IDashboardService

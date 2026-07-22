@@ -31,6 +31,13 @@ button {
   cursor: pointer;
   font-weight: 700;
   padding: 0.72rem 1rem;
+  transition: filter 100ms ease, transform 100ms ease, box-shadow 100ms ease;
+}
+
+button:active:not(:disabled) {
+  box-shadow: none;
+  filter: brightness(0.82);
+  transform: scale(0.97);
 }
 
 button:disabled {
@@ -335,11 +342,12 @@ td small {
   color: #fff;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
   padding: 1.25rem;
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar h2 {
@@ -362,12 +370,13 @@ td small {
 
 .sidebar nav {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.25rem;
 }
 
 .sidebar nav button {
   background: transparent;
   color: #dce8ed;
+  padding-block: 0.6rem;
   text-align: left;
 }
 
@@ -377,37 +386,141 @@ td small {
   color: #fff;
 }
 
-.sidebar-notifications {
-  border-top: 1px solid rgba(220, 232, 237, 0.18);
-  margin-top: 0.35rem;
-  padding-top: 0.95rem;
-  position: relative;
+.sidebar-exchange-rate {
+  background: #e8f8f5;
+  border-left: 4px solid #31c2ad;
+  border-radius: 7px;
+  color: #083f48;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem;
 }
 
-.notification-trigger {
+.exchange-rate-heading {
   align-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #dce8ed;
   display: flex;
+  gap: 0.5rem;
   justify-content: space-between;
-  padding: 0.72rem 0.8rem;
-  text-align: left;
-  width: 100%;
 }
 
-.notification-trigger:hover,
-.notification-trigger.active {
-  background: #1b5660;
-  color: #fff;
+.exchange-rate-heading > strong {
+  color: #075f58;
+  font-size: 0.72rem;
+  text-transform: uppercase;
 }
 
-.notification-trigger-label {
+.exchange-toggle {
   align-items: center;
+  background: transparent;
+  color: #075f58;
   display: inline-flex;
-  flex: 1;
-  gap: 0.6rem;
-  min-width: 0;
+  height: 1.75rem;
+  justify-content: center;
+  padding: 0;
+  width: 1.75rem;
+}
+
+.exchange-toggle:hover {
+  background: rgba(20, 99, 91, 0.1);
+  color: #0a8277;
+}
+
+.exchange-toggle svg {
+  fill: none;
+  height: 1.1rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.25;
+  width: 1.1rem;
+}
+
+.exchange-rate-quotes {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exchange-rate-quotes span {
+  font-size: 0.92rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.exchange-rate-quotes small,
+.exchange-result small {
+  color: #39706f;
+  display: block;
+  font-size: 0.6rem;
+  margin-bottom: 0.1rem;
+  text-transform: uppercase;
+}
+
+.exchange-currency-row {
+  align-items: center;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.exchange-calculator-body {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.exchange-currency-row select {
+  border-color: #a9cbc6;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.45rem 0.35rem;
+}
+
+.exchange-swap {
+  align-items: center;
+  background: #14635b;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 1rem;
+  height: 1.8rem;
+  justify-content: center;
+  padding: 0;
+  width: 1.8rem;
+}
+
+.exchange-amount-field {
+  color: #39706f;
+  display: grid;
+  font-size: 0.66rem;
+  font-weight: 800;
+  gap: 0.25rem;
+  text-transform: uppercase;
+}
+
+.exchange-amount-field input {
+  border-color: #a9cbc6;
+  border-radius: 6px;
+  color: #083f48;
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding: 0.52rem 0.6rem;
+}
+
+.exchange-result {
+  background: #fff;
+  border: 1px solid #a9cbc6;
+  border-radius: 6px;
+  color: #075f58;
+  display: block;
+  font-size: 1rem;
+  font-weight: 900;
+  padding: 0.55rem 0.6rem;
+}
+
+.exchange-rate-note {
+  color: #39706f;
+  font-size: 0.62rem;
+  line-height: 1.35;
 }
 
 .notification-bell,
@@ -445,10 +558,14 @@ td small {
 }
 
 .sidebar-session {
+  background: #102f37;
+  bottom: 0;
   display: grid;
   gap: 0.8rem;
   margin-top: auto;
-  padding-top: 1rem;
+  padding-top: 0.6rem;
+  position: sticky;
+  z-index: 2;
 }
 
 .session-user {
@@ -459,6 +576,42 @@ td small {
   display: flex;
   gap: 0.65rem;
   padding: 0.75rem 0.8rem;
+}
+
+.session-user-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-notification-button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2.35rem;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  width: 2.35rem;
+}
+
+.session-notification-button:hover,
+.session-notification-button.active {
+  background: #1b5660;
+  border-color: #42a098;
+}
+
+.session-notification-button .notification-count {
+  margin: 0;
+  min-height: 1.15rem;
+  min-width: 1.15rem;
+  padding: 0 0.25rem;
+  position: absolute;
+  right: -0.4rem;
+  top: -0.45rem;
 }
 
 .session-dot {
@@ -484,6 +637,12 @@ td small {
   display: block;
   font-size: 0.94rem;
   line-height: 1.2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
 }
 
 .content {

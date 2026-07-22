@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ApiRequestError, api, clearToken, getSessionStartedAt, getToken, setToken } from "./api/client";
 import { disableWebPush, enableWebPush, getWebPushStatus, type WebPushStatus } from "./services/webPush";
-import type { AppUser, Client, Dashboard, Installment, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification } from "./types/models";
+import type { AppUser, Client, Dashboard, ExchangeRate, Installment, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification } from "./types/models";
 
 type View = "dashboard" | "clients" | "loans" | "payments" | "reports" | "notifications" | "users" | "settings" | "clientPortal";
 type ConfirmDialogState = {
@@ -81,6 +81,91 @@ const emptyDashboard: Dashboard = {
 
 function money(value: number, currency = "C$") {
   return `${currency} ${value.toLocaleString("es-NI", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function ExchangeRateCalculator({ exchangeRate }: { exchangeRate: ExchangeRate }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [sourceCurrency, setSourceCurrency] = useState<1 | 2>(1);
+  const [amount, setAmount] = useState("0");
+  const targetCurrency: 1 | 2 = sourceCurrency === 1 ? 2 : 1;
+  const numericAmount = Number(amount.replace(",", "."));
+  const appliedRate = sourceCurrency === 2
+    ? exchangeRate.buyCordobasPerUsd
+    : exchangeRate.sellCordobasPerUsd;
+  const convertedAmount = Number.isFinite(numericAmount) && numericAmount >= 0
+    ? sourceCurrency === 2
+      ? numericAmount * appliedRate
+      : numericAmount / appliedRate
+    : 0;
+
+  function swapCurrencies() {
+    setSourceCurrency(targetCurrency);
+    setAmount(convertedAmount > 0 ? convertedAmount.toFixed(2) : "0");
+  }
+
+  return (
+    <div className="sidebar-exchange-rate" aria-label="Calculadora de tipo de cambio">
+      <div className="exchange-rate-heading">
+        <strong>Tipo de cambio</strong>
+        <button
+          type="button"
+          className="exchange-toggle"
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Ocultar calculadora" : "Mostrar calculadora"}
+          title={isExpanded ? "Ocultar calculadora" : "Mostrar calculadora"}
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d={isExpanded ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
+          </svg>
+        </button>
+      </div>
+      <div className="exchange-rate-quotes">
+        <span><small>Compra</small>C$ {exchangeRate.buyCordobasPerUsd.toFixed(2)}</span>
+        <span><small>Venta</small>C$ {exchangeRate.sellCordobasPerUsd.toFixed(2)}</span>
+      </div>
+      {isExpanded && (
+        <div className="exchange-calculator-body">
+          <div className="exchange-currency-row">
+            <select
+              aria-label="Moneda de origen"
+              value={sourceCurrency}
+              onChange={(event) => setSourceCurrency(Number(event.target.value) as 1 | 2)}
+            >
+              <option value={1}>C$</option>
+              <option value={2}>USD</option>
+            </select>
+            <button type="button" className="exchange-swap" aria-label="Intercambiar monedas" onClick={swapCurrencies}>⇄</button>
+            <select
+              aria-label="Moneda de destino"
+              value={targetCurrency}
+              onChange={(event) => setSourceCurrency(Number(event.target.value) === 1 ? 2 : 1)}
+            >
+              <option value={1}>C$</option>
+              <option value={2}>USD</option>
+            </select>
+          </div>
+          <label className="exchange-amount-field">
+            <span>Monto en {currencyLabels[sourceCurrency]}</span>
+            <input
+              inputMode="decimal"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label={`Monto en ${currencyLabels[sourceCurrency]}`}
+            />
+          </label>
+          <output className="exchange-result" aria-live="polite">
+            <small>Resultado</small>
+            {money(convertedAmount, currencyLabels[targetCurrency])}
+          </output>
+          <small className="exchange-rate-note">
+            {sourceCurrency === 2 ? "Se aplica la tasa de compra." : "Se aplica la tasa de venta."} Cálculo informativo.
+          </small>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function lateFeeRateLabel(loan: Loan) {
@@ -685,6 +770,7 @@ export default function App() {
   const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard>(emptyDashboard);
+  const [exchangeRate, setExchangeRate] = useState<ExchangeRate | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loanDetail, setLoanDetail] = useState<LoanDetail | null>(null);
@@ -726,28 +812,32 @@ export default function App() {
     setError(null);
     try {
       if (session?.role === "Client") {
-        const [notificationData, planData] = await Promise.all([
+        const [notificationData, planData, rateData] = await Promise.all([
           api.notifications(),
-          api.clientPaymentPlans()
+          api.clientPaymentPlans(),
+          api.currentExchangeRate().catch(() => null)
         ]);
         setNotifications(notificationData);
         setClientPlans(planData);
+        if (rateData) setExchangeRate(rateData);
         setClients([]);
         setLoans([]);
         setDashboard(emptyDashboard);
       } else {
-        const [dashboardData, clientData, loanData, notificationData, userData] = await Promise.all([
+        const [dashboardData, clientData, loanData, notificationData, userData, rateData] = await Promise.all([
           api.dashboard(),
           api.clients(search),
           api.loans(),
           api.notifications(),
-          session?.role === "Admin" ? api.users() : Promise.resolve([] as AppUser[])
+          session?.role === "Admin" ? api.users() : Promise.resolve([] as AppUser[]),
+          api.currentExchangeRate().catch(() => null)
         ]);
         setDashboard(dashboardData);
         setClients(clientData);
         setLoans(loanData);
         setNotifications(notificationData);
         setUsers(userData);
+        if (rateData) setExchangeRate(rateData);
         if (loanDetail && refreshLoanDetail) {
           if (loanData.some((loan) => loan.id === loanDetail.loan.id)) {
             setLoanDetail(await api.loanDetail(loanDetail.loan.id));
@@ -776,6 +866,25 @@ export default function App() {
       refresh();
     }
   }, [tokenAvailable, session?.role]);
+
+  useEffect(() => {
+    if (tokenAvailable) {
+      return;
+    }
+
+    let active = true;
+    api.currentExchangeRate()
+      .then((rate) => {
+        if (active) setExchangeRate(rate);
+      })
+      .catch(() => {
+        // El login continúa disponible si el proveedor de tasa está temporalmente fuera de línea.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [tokenAvailable]);
 
   useEffect(() => {
     if (!tokenAvailable) {
@@ -901,6 +1010,7 @@ export default function App() {
     setTokenAvailable(false);
     setSession(null);
     setDashboard(emptyDashboard);
+    setExchangeRate(null);
     setClients([]);
     setLoans([]);
     setLoanDetail(null);
@@ -1334,6 +1444,7 @@ export default function App() {
   const overdueLoans = useMemo(() => loans.filter((loan) => loan.status === 3), [loans]);
   const activeLoans = useMemo(() => loans.filter((loan) => loan.status === 1), [loans]);
   const activeClients = useMemo(() => clients.filter((client) => client.isActive), [clients]);
+  const unreadNotificationCount = notifications.filter((notification) => !notification.isRead).length;
   const navigationItems: View[] = session?.role === "Client"
     ? ["clientPortal"]
     : session?.role === "Admin"
@@ -1481,31 +1592,27 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-notifications">
-          <button
-            type="button"
-            className={`notification-trigger ${view === "notifications" ? "active" : ""}`}
-            aria-current={view === "notifications" ? "page" : undefined}
-            onClick={() => setView("notifications")}
-          >
-            <span className="notification-trigger-label">
-              <span className="notification-header-icon notification-bell" aria-hidden="true"><BellIcon /></span>
-              Notificaciones
-            </span>
-            {notifications.filter((notification) => !notification.isRead).length > 0 && (
-              <span className="notification-count">
-                {Math.min(99, notifications.filter((notification) => !notification.isRead).length)}
-              </span>
-            )}
-          </button>
-        </div>
+        {exchangeRate && <ExchangeRateCalculator exchangeRate={exchangeRate} />}
         <div className="sidebar-session">
           <div className="session-user">
             <span className="session-dot" aria-hidden="true" />
-            <div>
+            <div className="session-user-copy">
               <small>{session?.role === "Client" ? "Cliente" : session?.role === "Lender" ? "Prestamista" : "Administrador"}</small>
               <strong>{session?.fullName ?? session?.userName ?? "Administrador"}</strong>
             </div>
+            <button
+              type="button"
+              className={`session-notification-button ${view === "notifications" ? "active" : ""}`}
+              aria-label={`Notificaciones${unreadNotificationCount > 0 ? `, ${unreadNotificationCount} nuevas` : ""}`}
+              aria-current={view === "notifications" ? "page" : undefined}
+              title="Notificaciones"
+              onClick={() => setView("notifications")}
+            >
+              <span className="notification-bell" aria-hidden="true"><BellIcon /></span>
+              {unreadNotificationCount > 0 && (
+                <span className="notification-count">{Math.min(99, unreadNotificationCount)}</span>
+              )}
+            </button>
           </div>
           <button type="button" className="ghost" onClick={logout}>Cerrar sesión</button>
         </div>
@@ -1533,7 +1640,6 @@ export default function App() {
         </header>
 
         {error && <div className="alert">{error}</div>}
-
         {view === "dashboard" && <DashboardView dashboard={dashboard} activeLoans={activeLoans} overdueLoans={overdueLoans} navigate={setView} />}
         {view === "clientPortal" && <ClientPortalView plans={clientPlans} focusPlanId={clientPlanFocusId} />}
         {view === "notifications" && (
@@ -2289,7 +2395,7 @@ function PaymentsView(props: {
             <input name="paymentDate" type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} required />
           </label>
           <label className="field-label">
-            Monto pagado
+            Monto pagado ({currencyLabels[props.loanDetail?.loan.currency ?? 1]})
             <input name="amountPaid" type="number" step="0.01" min="0.01" placeholder="Ej. 500" required />
           </label>
           <label className="field-label">
@@ -2640,7 +2746,7 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
             });
           }}
         >
-          Descargar PDF
+          Descargar Tabla de pagos
         </button>
         <button
           type="button"
@@ -2704,13 +2810,17 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
                 <tr key={installment.id}>
                   <td>{installment.installmentNumber}</td>
                   <td>{dateOnly(installment.dueDate)}</td>
-                  <td>{money(installment.principalAmount, currencyLabels[detail.loan.currency])}</td>
-                  <td>{money(installment.interestAmount, currencyLabels[detail.loan.currency])}</td>
-                  <td>{money(installment.paymentAmount, currencyLabels[detail.loan.currency])}</td>
-                  <td>{mora.amount > 0 ? money(mora.amount, currencyLabels[detail.loan.currency]) : "-"}</td>
-                  <td>{money(installment.amountPaid + mora.amountPaid, currencyLabels[detail.loan.currency])}</td>
-                  <td>{money(pending, currencyLabels[detail.loan.currency])}</td>
-                  <td>{money(installment.remainingBalance, currencyLabels[detail.loan.currency])}</td>
+                  <td>{money(installment.principalAmount, currency)}</td>
+                  <td>{money(installment.interestAmount, currency)}</td>
+                  <td>{money(installment.paymentAmount, currency)}</td>
+                  <td>
+                    {mora.amount > 0 ? (
+                      money(mora.amount, currency)
+                    ) : "-"}
+                  </td>
+                  <td>{money(installment.amountPaid + mora.amountPaid, currency)}</td>
+                  <td>{money(pending, currency)}</td>
+                  <td>{money(installment.remainingBalance, currency)}</td>
                   <td><span className={`badge installment-${installment.status}`}>{installmentStatusLabels[installment.status]}</span></td>
                 </tr>
               );
@@ -2740,9 +2850,9 @@ function LoanDetailPanel({ detail, onRecalculate }: { detail: LoanDetail; onReca
                     <td>{charge.periodNumber}</td>
                     <td>{dateOnly(charge.periodStartDate)}</td>
                     <td>{dateOnly(charge.periodEndDate)}</td>
-                    <td>{money(charge.amount, currencyLabels[detail.loan.currency])}</td>
-                    <td>{money(charge.amountPaid, currencyLabels[detail.loan.currency])}</td>
-                    <td>{money(charge.pendingAmount, currencyLabels[detail.loan.currency])}</td>
+                    <td>{money(charge.amount, currency)}</td>
+                    <td>{money(charge.amountPaid, currency)}</td>
+                    <td>{money(charge.pendingAmount, currency)}</td>
                     <td>{charge.notes ?? "Mora por atraso"}</td>
                   </tr>
                 ))}

@@ -30,6 +30,7 @@ public sealed record RegisterPaymentRequest(
     Guid? InstallmentId,
     DateTime PaymentDate,
     decimal AmountPaid,
+    CurrencyType? PaymentCurrency,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,
     string? Notes,

@@ -59,7 +59,8 @@ export function PaymentsScreen({ route, navigation }: Props) {
     try {
       setError("");
       setLoading(true);
-      const activeLoans = (await api.loans()).filter((loan) => loan.status !== 2);
+      const loanData = await api.loans();
+      const activeLoans = loanData.filter((loan) => loan.status !== 2);
       setLoans(activeLoans);
       const preferredLoan = route.params?.loan ?? activeLoans.find((loan) => loan.id === route.params?.loanId);
       if (preferredLoan) {
@@ -235,7 +236,7 @@ export function PaymentsScreen({ route, navigation }: Props) {
             placeholder="Selecciona una cuota"
           />
           <DateField label="Fecha de pago" value={paymentDate} onChange={setPaymentDate} maximumDate={dateInputValue()} />
-          <Field label="Monto pagado" value={amountPaid} onChangeText={setAmountPaid} keyboardType="decimal-pad" placeholder="Ej. 500" />
+          <Field label={`Monto pagado (${currency})`} value={amountPaid} onChangeText={setAmountPaid} keyboardType="decimal-pad" placeholder="Ej. 500" />
           <Text style={styles.label}>Metodo de pago</Text>
           <View style={styles.methodRow}>
             {[

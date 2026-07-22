@@ -98,12 +98,14 @@ public sealed record ExtraordinaryPaymentPreviewRequest(
     LoanRecalculationMode Mode,
     DateTime EffectiveDate,
     decimal Amount,
+    CurrencyType? PaymentCurrency,
     int? NewInstallmentCount);
 
 public sealed record RegisterExtraordinaryPaymentRequest(
     LoanRecalculationMode Mode,
     DateTime EffectiveDate,
     decimal Amount,
+    CurrencyType? PaymentCurrency,
     int? NewInstallmentCount,
     PaymentMethod PaymentMethod,
     string? ReferenceNumber,

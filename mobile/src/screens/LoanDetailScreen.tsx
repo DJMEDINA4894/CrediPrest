@@ -148,7 +148,7 @@ export function LoanDetailScreen({ route, navigation }: Props) {
                   </View>
                 ) : null}
                 <View style={styles.actionCell}>
-                  <GhostButton title={documentAction === "pdf" ? "Generando..." : "Descargar tabla"} onPress={() => void shareDocument("pdf")} />
+                  <GhostButton title={documentAction === "pdf" ? "Generando..." : "Descargar Tabla de pagos"} onPress={() => void shareDocument("pdf")} />
                 </View>
                 <View style={styles.actionCell}>
                   <GhostButton title={documentAction === "agreement" ? "Descargando..." : "Descargar acuerdo"} onPress={() => void shareDocument("agreement")} />
@@ -180,7 +180,11 @@ export function LoanDetailScreen({ route, navigation }: Props) {
                       <Text style={styles.installmentBreakdownValue}>{money(installment.interestAmount, currency)}</Text>
                     </View>
                   </View>
-                  {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
+                  {mora.amount > 0 ? (
+                    <View>
+                      <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text>
+                    </View>
+                  ) : null}
                   <Text style={styles.muted}>Abonado: {money(installment.amountPaid + mora.amountPaid, currency)}</Text>
                   <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
                 </View>

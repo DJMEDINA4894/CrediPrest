@@ -16,8 +16,10 @@ public sealed class CurrentUserContext(IHttpContextAccessor httpContextAccessor)
     {
         get
         {
-            var role = User?.FindFirstValue(ClaimTypes.Role);
-            return Enum.TryParse<UserRole>(role, out var parsed) ? parsed : null;
+            var role = User?.FindFirstValue(ClaimTypes.Role)
+                ?? User?.FindFirstValue("role")
+                ?? User?.FindFirstValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
+            return Enum.TryParse<UserRole>(role, ignoreCase: true, out var parsed) ? parsed : null;
         }
     }
 

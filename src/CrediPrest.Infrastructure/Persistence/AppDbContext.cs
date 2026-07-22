@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<LoanCharge> LoanCharges => Set<LoanCharge>();
     public DbSet<Installment> Installments => Set<Installment>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
     public DbSet<PaymentReceipt> PaymentReceipts => Set<PaymentReceipt>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<ExpoPushDevice> ExpoPushDevices => Set<ExpoPushDevice>();
@@ -152,6 +153,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
                 .HasForeignKey(payment => payment.ReceiptId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(payment => payment.AmountPaid).HasPrecision(18, 2);
+            entity.Property(payment => payment.ReceivedAmount).HasPrecision(18, 2);
+            entity.Property(payment => payment.ExchangeRateCordobasPerUsd).HasPrecision(18, 6);
             entity.Property(payment => payment.Type).HasDefaultValue(PaymentType.Regular);
             entity.Property(payment => payment.PreviousOutstandingPrincipal).HasPrecision(18, 2);
             entity.Property(payment => payment.NewOutstandingPrincipal).HasPrecision(18, 2);
@@ -161,6 +164,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(payment => payment.NewPendingInterest).HasPrecision(18, 2);
             entity.Property(payment => payment.ReferenceNumber).HasMaxLength(120);
             entity.Property(payment => payment.Notes).HasMaxLength(1200);
+        });
+
+        modelBuilder.Entity<ExchangeRate>(entity =>
+        {
+            entity.ToTable("ExchangeRates");
+            entity.HasKey(rate => rate.Id);
+            entity.HasIndex(rate => rate.RateDate).IsUnique();
+            entity.Property(rate => rate.CordobasPerUsd).HasPrecision(18, 6);
+            entity.Property(rate => rate.BuyCordobasPerUsd).HasPrecision(18, 6);
+            entity.Property(rate => rate.SellCordobasPerUsd).HasPrecision(18, 6);
+            entity.Property(rate => rate.Source).HasMaxLength(160).IsRequired();
         });
 
         modelBuilder.Entity<PaymentReceipt>(entity =>

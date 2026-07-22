@@ -1,5 +1,6 @@
 using System.Text;
 using System.Security.Claims;
+using System.Net;
 using CrediPrest.Api;
 using CrediPrest.Application.Services;
 using CrediPrest.Domain.Enums;
@@ -43,7 +44,17 @@ builder.Services.AddHttpClient<IExpoPushNotificationService, ExpoPushNotificatio
 });
 builder.Services.AddScoped<IWebPushNotificationService, WebPushNotificationService>();
 builder.Services.AddScoped<IEmailNotificationService, AzureEmailNotificationService>();
+builder.Services.AddHttpClient<IExchangeRateService, BacExchangeRateService>(client =>
+{
+    client.BaseAddress = new Uri("https://www.sucursalelectronica.com/");
+    client.Timeout = TimeSpan.FromSeconds(8);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+});
 builder.Services.AddHostedService<AutomaticMaintenanceService>();
+builder.Services.AddHostedService<ExchangeRateUpdateService>();
 builder.Services.AddHostedService<ExpoPushDispatchHostedService>();
 builder.Services.AddHostedService<WebPushDispatchHostedService>();
 builder.Services.AddHostedService<EmailNotificationDispatchHostedService>();
@@ -75,13 +86,35 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 }
 
                 var database = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
-                var isActive = context.Principal?.IsInRole(UserRole.Client.ToString()) == true
-                    ? await database.Clients.AnyAsync(client => client.Id == subjectId && client.IsActive, context.HttpContext.RequestAborted)
-                    : await database.Users.AnyAsync(user => user.Id == subjectId && user.IsActive, context.HttpContext.RequestAborted);
+                if (context.Principal?.IsInRole(UserRole.Client.ToString()) == true)
+                {
+                    var isActiveClient = await database.Clients.AnyAsync(
+                        client => client.Id == subjectId && client.IsActive,
+                        context.HttpContext.RequestAborted);
+                    if (!isActiveClient)
+                    {
+                        context.Fail("El cliente está inactivo o fue eliminado.");
+                    }
 
-                if (!isActive)
+                    return;
+                }
+
+                var user = await database.Users
+                    .AsNoTracking()
+                    .Where(item => item.Id == subjectId && item.IsActive)
+                    .Select(item => new { item.Role })
+                    .FirstOrDefaultAsync(context.HttpContext.RequestAborted);
+                var tokenRole = context.Principal?.FindFirstValue(ClaimTypes.Role)
+                    ?? context.Principal?.FindFirstValue("role");
+
+                if (user is null)
                 {
                     context.Fail("El usuario está inactivo o fue eliminado.");
+                }
+                else if (!Enum.TryParse<UserRole>(tokenRole, ignoreCase: true, out var parsedRole)
+                    || parsedRole != user.Role)
+                {
+                    context.Fail("El rol de la sesión cambió. Inicia sesión nuevamente.");
                 }
             }
         };

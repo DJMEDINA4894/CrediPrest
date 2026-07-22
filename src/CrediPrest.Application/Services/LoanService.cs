@@ -58,7 +58,7 @@ internal sealed class LoanService(
         var loan = new Loan
         {
             ClientId = request.ClientId,
-            LenderUserId = currentUser.IsLender ? currentUser.UserId : client.LenderUserId,
+            LenderUserId = client.LenderUserId ?? currentUser.UserId,
             PrincipalAmount = request.PrincipalAmount,
             Currency = request.Currency,
             MonthlyInterestRate = request.MonthlyInterestRate,
@@ -240,6 +240,7 @@ internal sealed class LoanService(
     {
         await RefreshOverdueAsync(cancellationToken);
         var loan = await LoadLoanAsync(id, cancellationToken);
+        ValidatePaymentCurrency(request.PaymentCurrency, loan.Currency);
         return BuildExtraordinaryPaymentPlan(
             loan,
             request.Mode,
@@ -277,6 +278,7 @@ internal sealed class LoanService(
             }
 
             var loan = await LoadLoanForUpdateAsync(id, cancellationToken);
+            ValidatePaymentCurrency(request.PaymentCurrency, loan.Currency);
             var plan = BuildExtraordinaryPaymentPlan(
                 loan,
                 request.Mode,
@@ -294,8 +296,15 @@ internal sealed class LoanService(
 
             if (request.Mode == LoanRecalculationMode.Payoff)
             {
-                ValidateSettlementAmount(request.Amount, plan.Preview.TotalSettlementAmount);
-                await ApplyLoanPayoffAsync(loan, plan, request, receipt?.Id, cancellationToken);
+                ValidateSettlementAmount(
+                    request.Amount,
+                    plan.Preview.TotalSettlementAmount);
+                await ApplyLoanPayoffAsync(
+                    loan,
+                    plan,
+                    request,
+                    receipt?.Id,
+                    cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 if (transaction is not null)
                 {
@@ -597,22 +606,26 @@ internal sealed class LoanService(
 
     private IQueryable<Loan> ApplyOwnershipFilter(IQueryable<Loan> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(loan => loan.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(loan => loan.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private IQueryable<Domain.Entities.Client> ApplyClientOwnershipFilter(IQueryable<Domain.Entities.Client> query)
     {
-        if (!currentUser.IsLender || !currentUser.UserId.HasValue)
+        if (currentUser.IsAdmin)
         {
             return query;
         }
 
-        return query.Where(client => client.LenderUserId == currentUser.UserId.Value);
+        return currentUser.IsLender && currentUser.UserId.HasValue
+            ? query.Where(client => client.LenderUserId == currentUser.UserId.Value)
+            : query.Where(_ => false);
     }
 
     private static IReadOnlyList<Installment> RecalculateLoan(Loan loan)
@@ -983,7 +996,9 @@ internal sealed class LoanService(
         loan.Status = LoanStatus.Cancelled;
     }
 
-    private static void ValidateSettlementAmount(decimal receivedAmount, decimal settlementAmount)
+    private static void ValidateSettlementAmount(
+        decimal receivedAmount,
+        decimal settlementAmount)
     {
         if (receivedAmount <= 0)
         {
@@ -994,6 +1009,14 @@ internal sealed class LoanService(
         {
             throw new InvalidOperationException(
                 $"El monto exacto para liquidar el préstamo es {settlementAmount:N2}. Actualiza la vista previa antes de confirmar.");
+        }
+    }
+
+    private static void ValidatePaymentCurrency(CurrencyType? paymentCurrency, CurrencyType loanCurrency)
+    {
+        if (paymentCurrency.HasValue && paymentCurrency.Value != loanCurrency)
+        {
+            throw new InvalidOperationException("El abono debe registrarse en la misma moneda del préstamo.");
         }
     }
 

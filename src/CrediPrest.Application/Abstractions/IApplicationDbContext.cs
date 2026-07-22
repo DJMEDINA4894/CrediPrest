@@ -11,6 +11,7 @@ public interface IApplicationDbContext
     DbSet<LoanCharge> LoanCharges { get; }
     DbSet<Installment> Installments { get; }
     DbSet<Payment> Payments { get; }
+    DbSet<ExchangeRate> ExchangeRates { get; }
     DbSet<PaymentReceipt> PaymentReceipts { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<LoanStatusCatalog> LoanStatuses { get; }

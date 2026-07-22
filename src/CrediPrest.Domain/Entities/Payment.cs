@@ -13,6 +13,9 @@ public sealed class Payment
     public LoanCharge? LoanCharge { get; set; }
     public DateTime PaymentDate { get; set; }
     public decimal AmountPaid { get; set; }
+    public decimal? ReceivedAmount { get; set; }
+    public CurrencyType? ReceivedCurrency { get; set; }
+    public decimal? ExchangeRateCordobasPerUsd { get; set; }
     public PaymentType Type { get; set; } = PaymentType.Regular;
     public PaymentMethod PaymentMethod { get; set; }
     public string? ReferenceNumber { get; set; }
