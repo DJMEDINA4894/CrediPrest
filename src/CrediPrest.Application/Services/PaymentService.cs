@@ -8,7 +8,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CrediPrest.Application.Services;
 
-internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanService loanService, ICurrentUserContext currentUser) : IPaymentService
+internal sealed class PaymentService(
+    IApplicationDbContext dbContext,
+    ILoanService loanService,
+    ICurrentUserContext currentUser) : IPaymentService
 {
     public async Task<LoanDetailDto> RegisterAsync(RegisterPaymentRequest request, CancellationToken cancellationToken = default)
     {
@@ -60,6 +63,11 @@ internal sealed class PaymentService(IApplicationDbContext dbContext, ILoanServi
                 && loan.Charges.All(charge => charge.AmountPaid >= charge.Amount))
             {
                 throw new InvalidOperationException("El préstamo ya está cancelado.");
+            }
+
+            if (request.PaymentCurrency.HasValue && request.PaymentCurrency.Value != loan.Currency)
+            {
+                throw new InvalidOperationException("El pago debe registrarse en la misma moneda del préstamo.");
             }
 
             var receipt = PaymentReceiptFactory.Create(

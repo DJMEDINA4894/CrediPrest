@@ -9,6 +9,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { PaidBreakdownInfo } from "../components/PaidBreakdownInfo";
+import { ExchangeRateCalculatorCard } from "../components/ExchangeRateCalculatorCard";
 import { colors, spacing } from "../theme/theme";
 import type { LoanDetail } from "../types/models";
 import { currencyLabels, dateOnly, effectiveInstallmentStatus, frequencyLabels, installmentPendingAmount, installmentStatusLabels, lateFeeAllocation, lateFeePolicyText, money, monthYear } from "../utils/format";
@@ -87,6 +88,7 @@ export function ClientPortalScreen() {
           <Metric title="Debe C$" value={money(pendingCordobas)} tone="warn" />
           <Metric title="Debe USD" value={money(pendingUsd, "USD")} tone="warn" />
         </View>
+        <ExchangeRateCalculatorCard />
         {plans.length === 0 ? <EmptyState text="No tienes prestamos activos registrados para mostrar." /> : null}
         {plans.map((plan) => {
           const currency = currencyLabels[plan.loan.currency];
@@ -124,7 +126,7 @@ export function ClientPortalScreen() {
               {plan.loan.lateFeesPending > 0 ? <Text style={styles.late}>Mora pendiente: {money(plan.loan.lateFeesPending, currency)}</Text> : null}
               <View style={styles.documentAction}>
                 <SecondaryButton
-                  title={downloadingLoanId === plan.loan.id ? "Descargando..." : "Descargar tabla"}
+                  title={downloadingLoanId === plan.loan.id ? "Descargando..." : "Descargar Tabla de pagos"}
                   onPress={() => void downloadPlan(plan)}
                 />
               </View>
@@ -152,7 +154,11 @@ export function ClientPortalScreen() {
                     </View>
                     <Text style={styles.muted}>Vence: {dateOnly(installment.dueDate)}</Text>
                     <Text style={styles.muted}>Cuota: {money(installment.paymentAmount, currency)}</Text>
-                    {mora.amount > 0 ? <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text> : null}
+                    {mora.amount > 0 ? (
+                      <View>
+                        <Text style={styles.late}>Mora: {money(mora.amount, currency)}</Text>
+                      </View>
+                    ) : null}
                     <Text style={styles.pending}>Pendiente: {money(pending, currency)}</Text>
                   </View>
                 );

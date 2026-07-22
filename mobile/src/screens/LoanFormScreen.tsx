@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useState } from "react";
-import { Alert, RefreshControl, ScrollView, StyleSheet } from "react-native";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
 import { Card, EmptyState, ErrorText, Field, InfoTooltip, PrimaryButton, Screen, SelectField, Text } from "../components/ui";
@@ -110,6 +110,7 @@ export function LoanFormScreen({ route, navigation }: Props) {
   }
 
   const selectedFrequency = Number(paymentFrequency);
+  const selectedCurrency = Number(currency) === 2 ? 2 : 1;
   const termLabel = selectedFrequency === 1 ? "Cantidad de pagos semanales" : selectedFrequency === 2 ? "Cantidad de pagos quincenales" : "Cantidad de pagos mensuales";
   const lateFeeExplanation = lateFeePolicyText(
     selectedFrequency,

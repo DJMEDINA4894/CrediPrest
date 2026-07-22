@@ -81,6 +81,23 @@ Frontend: `http://127.0.0.1:5173`
 - Navegadores con Web Push/VAPID: `web/PUSH_NOTIFICATIONS.md`
 - Correo para web y movil con Azure Communication Services: `EMAIL_NOTIFICATIONS.md`
 
+## Tipo de cambio USD/C$
+
+La API consulta las tasas de compra y venta publicadas por BAC Credomatic Nicaragua, las guarda por fecha y ejecuta una actualización automática a las `05:00` hora de Nicaragua. Si el servicio no está disponible, utiliza la última tasa guardada; cuando todavía no existe historial usa las tasas de respaldo configuradas.
+
+Configuración opcional del App Service:
+
+```text
+ExchangeRates__LocalRunTime=05:00
+ExchangeRates__TimeZoneId=America/Managua
+ExchangeRates__FallbackBuyCordobasPerUsd=36.30
+ExchangeRates__FallbackSellCordobasPerUsd=37.14
+```
+
+La API aplica las migraciones al iniciar. Después de publicar, revisa el Log Stream de Azure para confirmar que arrancó sin errores. Cuando se entregan dólares se aplica la compra de BAC; cuando se entregan córdobas para cubrir una obligación en dólares se aplica la venta. Los pagos guardan el monto y moneda recibidos, la tasa C$/USD utilizada y el monto aplicado en la moneda contractual del préstamo.
+
+En planes de Azure que suspenden la aplicación, el trabajo de las `05:00` puede ejecutarse al reactivarse el servicio. Esto no deja al sistema sin tasa: el primer acceso del día intenta obtenerla nuevamente antes de convertir un monto.
+
 ## Funcionalidad inicial
 
 - Login privado con JWT.

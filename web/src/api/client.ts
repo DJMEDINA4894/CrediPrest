@@ -1,4 +1,4 @@
-import type { AppUser, Client, Dashboard, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification, Payment } from "../types/models";
+import type { AppUser, Client, Dashboard, ExchangeRate, Loan, LoanDetail, LoanRecalculationPreview, LoginResponse, Notification, Payment } from "../types/models";
 
 const LOCAL_API_URL = "http://localhost:5052/api";
 const PRODUCTION_API_URL = "https://creadiprest-c6a3e6dya2cbhtf9.centralus-01.azurewebsites.net/api";
@@ -103,6 +103,7 @@ export const api = {
       body: JSON.stringify({ identificationOrPhone })
     }),
   dashboard: () => request<Dashboard>("/dashboard"),
+  currentExchangeRate: () => request<ExchangeRate>("/exchange-rates/current"),
   notifications: () => request<Notification[]>("/notifications"),
   markNotificationRead: (id: string) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
   webPushPublicKey: () => request<{ publicKey: string }>("/notifications/web-push/public-key"),

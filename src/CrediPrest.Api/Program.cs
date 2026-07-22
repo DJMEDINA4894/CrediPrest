@@ -1,5 +1,6 @@
 using System.Text;
 using System.Security.Claims;
+using System.Net;
 using CrediPrest.Api;
 using CrediPrest.Application.Services;
 using CrediPrest.Domain.Enums;
@@ -43,7 +44,17 @@ builder.Services.AddHttpClient<IExpoPushNotificationService, ExpoPushNotificatio
 });
 builder.Services.AddScoped<IWebPushNotificationService, WebPushNotificationService>();
 builder.Services.AddScoped<IEmailNotificationService, AzureEmailNotificationService>();
+builder.Services.AddHttpClient<IExchangeRateService, BacExchangeRateService>(client =>
+{
+    client.BaseAddress = new Uri("https://www.sucursalelectronica.com/");
+    client.Timeout = TimeSpan.FromSeconds(8);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+});
 builder.Services.AddHostedService<AutomaticMaintenanceService>();
+builder.Services.AddHostedService<ExchangeRateUpdateService>();
 builder.Services.AddHostedService<ExpoPushDispatchHostedService>();
 builder.Services.AddHostedService<WebPushDispatchHostedService>();
 builder.Services.AddHostedService<EmailNotificationDispatchHostedService>();

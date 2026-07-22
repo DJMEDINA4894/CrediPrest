@@ -161,6 +161,15 @@ export interface Payment {
   newPendingInterest?: number;
 }
 
+export interface ExchangeRate {
+  rateDate: string;
+  cordobasPerUsd: number;
+  buyCordobasPerUsd: number;
+  sellCordobasPerUsd: number;
+  source: string;
+  retrievedAtUtc: string;
+}
+
 export interface Dashboard {
   totalLoanedCordobas: number;
   totalLoanedUsd: number;

@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../api/client";
-import { Card, EmptyState, ErrorText, Metric, Screen } from "../components/ui";
+import { Card, EmptyState, ErrorText, Metric, Screen, Text } from "../components/ui";
+import { ExchangeRateCalculatorCard } from "../components/ExchangeRateCalculatorCard";
 import type { Dashboard } from "../types/models";
 import { money } from "../utils/format";
 import { spacing } from "../theme/theme";
@@ -32,6 +33,7 @@ export function DashboardScreen() {
     <Screen>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         <ErrorText text={error} />
+        <ExchangeRateCalculatorCard />
         {dashboard ? (
           <>
             <View style={styles.metrics}>
